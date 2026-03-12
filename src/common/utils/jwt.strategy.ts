@@ -13,7 +13,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(private readonly configService: ConfigService) {
     // 获取 JWT Secret（用于签名验证）
     const jwtSecret =
-      configService.get<string>('JWT_SECRET') || 'ai-learning-assistant';
+      configService.get<string>('JWT_SECRET') || 'knowledge-base-api';
 
     // 调用父类构造函数，传递JWT的配置选项
     super({
@@ -23,7 +23,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       // 不忽略JWT的过期时间（默认为false）
       ignoreExpiration: false,
 
-      // 获取JWT的密钥，如果配置中没有找到，则使用默认值'ai-learning-assistant'
+      // 获取JWT的密钥，如果配置中没有找到，则使用默认值'knowledge-base-api'
       // ⚠️ 注意：这里的 secret 必须与 app.module.ts 中 JwtModule 的 secret 保持一致
       secretOrKey: jwtSecret,
     });

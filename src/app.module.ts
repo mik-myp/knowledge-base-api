@@ -3,13 +3,15 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
-import { JwtStrategy } from './auth/jwt.strategy';
+import { JwtStrategy } from './common/utils/jwt.strategy';
 import { AllExceptionsFilter } from './common/filters/exception.filter';
-import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ResponseInterceptor } from './common/interceptor/response.interceptor';
 import { MongooseModule } from '@nestjs/mongoose';
 import { mongooseSerializePlugin } from './common/plugins/mongoose-serialize.plugin';
 import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
+import { JwtAuthGuard } from './common/guard/jwt-auth.guard';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -23,7 +25,7 @@ import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
       useFactory: async (configService: ConfigService) => ({
         uri:
           configService.get<string>('MONGODB_URI') ||
-          'mongodb://localhost:27017/ai-learning-assistant',
+          'mongodb://localhost:27017/knowledge-base-api',
         connectionFactory: (connection) => {
           connection.plugin(mongooseSerializePlugin);
           return connection;
@@ -35,7 +37,7 @@ import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
       useFactory: async (configService: ConfigService) => {
         return {
           secret:
-            configService.get<string>('JWT_SECRET') || 'ai-learning-assistant',
+            configService.get<string>('JWT_SECRET') || 'knowledge-base-api',
           signOptions: {
             expiresIn:
               configService.get<JwtSignOptions['expiresIn']>(
@@ -48,6 +50,7 @@ import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
       global: true,
     }),
     PassportModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [
@@ -58,6 +61,10 @@ import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
     {
       provide: APP_FILTER,
       useClass: AllExceptionsFilter,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
     },
     AppService,
     JwtStrategy,
