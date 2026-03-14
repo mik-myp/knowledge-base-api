@@ -1,5 +1,12 @@
 import { HttpStatus } from '@nestjs/common';
 
+export type SuccessResponse<T> = {
+  code: number;
+  message: string;
+  data: T;
+  timestamp: string;
+};
+
 export class ResponseUtil {
   /**
    * 构建成功响应

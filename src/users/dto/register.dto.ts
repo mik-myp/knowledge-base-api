@@ -11,7 +11,7 @@ export class RegisterDto {
   password: string;
 
   @IsString()
-  @MinLength(2, { message: '密码至少 2 位' })
-  @MaxLength(30, { message: '密码长度不能超过 30 个字符' })
-  displayName: string;
+  @MinLength(2, { message: '昵称至少 2 位' })
+  @MaxLength(30, { message: '昵称长度不能超过 30 个字符' })
+  username: string;
 }

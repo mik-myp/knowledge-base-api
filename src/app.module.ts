@@ -11,7 +11,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { mongooseSerializePlugin } from './common/plugins/mongoose-serialize.plugin';
 import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
 import { JwtAuthGuard } from './common/guard/jwt-auth.guard';
-import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -50,7 +50,7 @@ import { AuthModule } from './auth/auth.module';
       global: true,
     }),
     PassportModule,
-    AuthModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [

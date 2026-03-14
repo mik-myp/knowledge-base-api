@@ -176,7 +176,7 @@ MongoDB 是文档型数据库，数据通常长这样：
 {
   "_id": "67d0f7d2f0c2e4e7c1a00001",
   "email": "alice@example.com",
-  "displayName": "Alice"
+  "username": "Alice"
 }
 ```
 
@@ -331,7 +331,7 @@ LangChain 官方文档也明确支持在 `ChatOpenAI` 和 `OpenAIEmbeddings` 中
 ```mermaid
 flowchart TD
     A[客户端<br/>Swagger / Postman / 前端] --> B[NestJS API]
-    B --> C[Auth 模块]
+    B --> C[Users 模块<br/>包含注册/登录/刷新]
     B --> D[KnowledgeBases 模块]
     B --> E[Documents 模块]
     B --> F[Chat 模块]
@@ -344,7 +344,7 @@ flowchart TD
     F --> M[RAG Query 服务]
     M --> L
     M --> N[ChatOpenAI]
-    C --> O[MongoDB users / auth_sessions]
+    C --> O[MongoDB users]
     D --> P[MongoDB knowledge_bases]
     E --> Q[MongoDB documents]
     F --> R[MongoDB chat_sessions / chat_messages]
@@ -367,14 +367,12 @@ graph TD
     AppModule --> ConfigModule
     AppModule --> DatabaseModule
     AppModule --> UsersModule
-    AppModule --> AuthModule
     AppModule --> KnowledgeBasesModule
     AppModule --> StorageModule
     AppModule --> DocumentsModule
     AppModule --> RagModule
     AppModule --> ChatModule
 
-    AuthModule --> UsersModule
     DocumentsModule --> StorageModule
     DocumentsModule --> KnowledgeBasesModule
     DocumentsModule --> RagModule
@@ -393,34 +391,34 @@ graph TD
 ```mermaid
 sequenceDiagram
     participant U as 用户
-    participant A as AuthController
-    participant S as AuthService
+    participant A as UsersController
+    participant S as UsersService
     participant DB as MongoDB
-    U->>A: POST /auth/register
+    U->>A: POST /users/register
     A->>S: register(dto)
     S->>DB: 创建 users 文档
-    S->>DB: 创建 auth_sessions 文档
+    S->>DB: 写入 users.refreshToken(bcrypt 哈希)
     S-->>U: accessToken + refreshToken
 
-    U->>A: POST /auth/login
+    U->>A: POST /users/login
     A->>S: login(dto)
     S->>DB: 校验用户与密码
-    S->>DB: 新建 auth_sessions
+    S->>DB: 更新 users.refreshToken(bcrypt 哈希)
     S-->>U: accessToken + refreshToken
 
-    U->>A: GET /auth/me
+    U->>A: GET /users/me
     A->>S: 校验 accessToken
     S-->>U: 当前用户信息
 
-    U->>A: POST /auth/refresh
+    U->>A: POST /users/refresh
     A->>S: refresh(refreshToken)
-    S->>DB: 校验 session + token hash
-    S->>DB: 更新/轮换 refresh session
+    S->>DB: 比对 users.refreshToken(bcrypt 哈希)
+    S->>DB: 轮换并覆盖 refreshToken
     S-->>U: 新 accessToken + refreshToken
 
-    U->>A: POST /auth/logout
-    A->>S: logout(refreshToken)
-    S->>DB: 标记 session revoked
+    U->>A: POST /users/logout
+    A->>S: logout(userId)
+    S->>DB: 移除 users.refreshToken
     S-->>U: logout success
 ```
 
@@ -518,13 +516,13 @@ flowchart LR
 
 ### 14.1 认证接口
 
-| 方法 | 路径             | 说明         | 是否鉴权 |
-| ---- | ---------------- | ------------ | -------- |
-| POST | `/auth/register` | 注册         | 否       |
-| POST | `/auth/login`    | 登录         | 否       |
-| POST | `/auth/refresh`  | 刷新 token   | 否       |
-| POST | `/auth/logout`   | 退出登录     | 是       |
-| GET  | `/auth/me`       | 获取当前用户 | 是       |
+| 方法 | 路径              | 说明         | 是否鉴权 |
+| ---- | ----------------- | ------------ | -------- |
+| POST | `/users/register` | 注册         | 否       |
+| POST | `/users/login`    | 登录         | 否       |
+| POST | `/users/refresh`  | 刷新 token   | 否       |
+| POST | `/users/logout`   | 退出登录     | 是       |
+| GET  | `/users/me`       | 获取当前用户 | 是       |
 
 ### 14.2 知识库接口
 
@@ -595,19 +593,15 @@ knowledge-base-api
 │  │     ├─ jwt.strategy.ts
 │  │     ├─ public.decorator.ts
 │  │     └─ response.util.ts
-│  ├─ auth
+│  ├─ users
 │  │  ├─ dto
 │  │  │  ├─ register.dto.ts
 │  │  │  ├─ login.dto.ts
 │  │  │  └─ refresh-token.dto.ts
 │  │  ├─ schemas
-│  │  │  └─ auth.schema.ts
-│  │  ├─ auth.controller.ts
-│  │  ├─ auth.module.ts
-│  │  └─ auth.service.ts
-│  ├─ users
-│  │  ├─ schemas
 │  │  │  └─ user.schema.ts
+│  │  ├─ users.controller.ts
+│  │  ├─ users.service.ts
 │  │  └─ users.module.ts
 │  ├─ knowledge-bases
 │  │  ├─ schemas
@@ -637,9 +631,6 @@ knowledge-base-api
 
 ```text
 src
-├─ auth
-│  └─ dto
-│     └─ logout.dto.ts
 ├─ common
 │  └─ types
 │     └─ auth.types.ts
@@ -676,8 +667,7 @@ src
 ### 15.3 每个目录的职责
 
 - `common`: 公共守卫、过滤器、拦截器、Mongoose 插件和 JWT 工具
-- `auth`: 认证入口层，当前已经有 controller、service、dto 和 `auth_sessions` schema
-- `users`: 用户数据本身，只拥有 `users` 集合
+- `users`: 用户主数据和认证入口都放这里，同时负责 `/users/*` 路由和 `users` 集合
 - `knowledge-bases`: 知识库主数据，只拥有 `knowledge_bases` 集合
 - `documents`: 文档元数据和切片数据，拥有 `documents` 与 `document_chunks`
 - `chat`: 会话与消息持久化，拥有 `chat_sessions` 与 `chat_messages`
@@ -686,7 +676,7 @@ src
 
 ### 15.4 依赖方向要记住
 
-- `auth` 依赖 `users`
+- `users` 自己承载登录、注册、刷新和当前用户信息
 - `documents` 后续可以依赖 `storage`
 - `documents` 后续可以依赖 `rag`
 - `chat` 后续可以依赖 `rag`
@@ -706,24 +696,22 @@ src
 - 能支撑 RAG 检索
 - 能支撑聊天历史
 
-本项目固定使用 7 个集合：
+本项目固定使用 6 个集合：
 
 1. `users`
-2. `auth_sessions`
-3. `knowledge_bases`
-4. `documents`
-5. `document_chunks`
-6. `chat_sessions`
-7. `chat_messages`
+2. `knowledge_bases`
+3. `documents`
+4. `document_chunks`
+5. `chat_sessions`
+6. `chat_messages`
 
 下面不再按“孤立集合”来回跳着看，而是按实际开发时更顺手的模块顺序整理：
 
 1. `UsersModule`
-2. `AuthModule`
-3. `KnowledgeBasesModule`
-4. `DocumentsModule`
-5. `ChatModule`
-6. `AppModule`
+2. `KnowledgeBasesModule`
+3. `DocumentsModule`
+4. `ChatModule`
+5. `AppModule`
 
 ### 16.0 先记住这一轮的 schema 约定
 
@@ -750,20 +738,26 @@ src
 
 #### `users` 集合的作用
 
-存用户基础信息。
+存用户基础信息，同时顺手保存当前有效的 `refreshToken`。
+
+这里要补一句和当前代码一致的话：
+
+- 用户刚注册完成、或者已经 logout 之后，`refreshToken` 字段可能不存在
+- 只有在 `register/login/refresh` 这些会重新签发 token 的动作之后，才会把新的 refreshToken 哈希写回去
 
 #### 字段设计
 
-| 字段           | 类型     | 必填 | 说明                  |
-| -------------- | -------- | ---- | --------------------- |
-| `_id`          | ObjectId | 是   | 用户主键              |
-| `email`        | string   | 是   | 登录邮箱，唯一        |
-| `passwordHash` | string   | 是   | 密码哈希              |
-| `displayName`  | string   | 是   | 显示名称              |
-| `status`       | string   | 是   | `active` / `disabled` |
-| `lastLoginAt`  | Date     | 否   | 最近登录时间          |
-| `createdAt`    | Date     | 是   | 创建时间              |
-| `updatedAt`    | Date     | 是   | 更新时间              |
+| 字段           | 类型     | 必填 | 说明                                 |
+| -------------- | -------- | ---- | ------------------------------------ |
+| `_id`          | ObjectId | 是   | 用户主键                             |
+| `email`        | string   | 是   | 登录邮箱，唯一                       |
+| `password`     | string   | 是   | 密码哈希                             |
+| `username`     | string   | 是   | 显示名称                             |
+| `status`       | string   | 是   | `active` / `disabled`                |
+| `refreshToken` | string   | 否   | 当前有效 refreshToken 的 bcrypt 哈希 |
+| `lastLoginAt`  | Date     | 否   | 最近登录时间                         |
+| `createdAt`    | Date     | 是   | 创建时间                             |
+| `updatedAt`    | Date     | 是   | 更新时间                             |
 
 #### 索引
 
@@ -775,9 +769,10 @@ src
 {
   "_id": { "$oid": "67d0f7d2f0c2e4e7c1a00001" },
   "email": "alice@example.com",
-  "passwordHash": "$2b$10$S5I........",
-  "displayName": "Alice",
+  "password": "$2b$10$S5I........",
+  "username": "Alice",
   "status": "active",
+  "refreshToken": "6c4f0e8d8c7f4e3....",
   "lastLoginAt": { "$date": "2026-03-12T10:00:00.000Z" },
   "createdAt": { "$date": "2026-03-12T09:00:00.000Z" },
   "updatedAt": { "$date": "2026-03-12T10:00:00.000Z" }
@@ -789,8 +784,11 @@ src
 ```ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
+import bcrypt from 'bcryptjs';
 
-export type UserDocument = HydratedDocument<User>;
+export type UserDocument = HydratedDocument<User> & {
+  comparePassword(password: string): Promise<boolean>;
+};
 
 export enum UserStatus {
   Active = 'active',
@@ -805,19 +803,18 @@ export enum UserStatus {
 export class User {
   @Prop({
     required: true,
-    lowercase: true,
     trim: true,
   })
   email: string;
 
   @Prop({ required: true })
-  passwordHash: string;
+  password: string;
 
   @Prop({
     required: true,
     trim: true,
   })
-  displayName: string;
+  username: string;
 
   @Prop({
     type: String,
@@ -827,13 +824,42 @@ export class User {
   })
   status: UserStatus;
 
-  @Prop()
+  @Prop({
+    type: String,
+    default: undefined,
+    trim: true,
+  })
+  refreshToken?: string;
+
+  @Prop({
+    type: Date,
+    default: Date.now,
+  })
   lastLoginAt?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
 
 UserSchema.index({ email: 1 }, { unique: true });
+
+UserSchema.pre<UserDocument>('save', async function () {
+  if (!this.isModified('password')) {
+    return;
+  }
+
+  const salt = await bcrypt.genSalt(10);
+
+  if (this.password) {
+    this.password = await bcrypt.hash(this.password, salt);
+  }
+});
+
+UserSchema.methods.comparePassword = async function (
+  candidatePassword: string,
+): Promise<boolean> {
+  if (!this.password) return false;
+  return await bcrypt.compare(candidatePassword, this.password as string);
+};
 ```
 
 #### `UsersModule` 中如何引入
@@ -842,147 +868,43 @@ UserSchema.index({ email: 1 }, { unique: true });
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from './schemas/user.schema';
+import { UsersController } from './users.controller';
+import { UsersService } from './users.service';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
   ],
-  exports: [MongooseModule],
+  controllers: [UsersController],
+  providers: [UsersService],
+  exports: [UsersService],
 })
 export class UsersModule {}
 ```
 
-### 16.2 认证模块 `AuthModule`
+### 16.2 `UsersModule` 中的认证能力
 
-这个模块自己的持久化集合只有一张：
+这次我们故意采用一个更适合个人练习项目的简化方案：
 
-- `auth_sessions`
+- 不再单独创建 `auth_sessions`
+- 不再保留 `AuthModule`
+- 注册、登录、刷新、退出、当前用户都放进 `UsersModule`
+- `refreshToken` 直接存在 `users` 集合里
 
-但它在依赖关系上还会依赖：
+这个方案为什么更适合练习：
 
-- `UsersModule`
+- 少一张表，少一层模型注入
+- 少一个模块，目录更简单
+- 单人开发时更容易把心力放在文档上传、切片、检索和回答主链路
 
-因为认证逻辑一定要读取用户信息。
+这个方案的边界也要知道：
 
-#### `auth_sessions` 集合的作用
+- 默认只适合单设备或单会话
+- 后一次登录或刷新会覆盖上一次保存的 `refreshToken`
+- 当前 service 会顺手检查 `username` 是否重复，但数据库硬约束仍然只有 `email` 唯一索引
+- 不适合做多端登录、设备管理、会话列表
 
-存 refreshToken 对应的会话记录。
-
-你不要把 refreshToken 明文存数据库里，而是存它的哈希值。
-
-#### 为什么要单独有这张表
-
-因为你需要：
-
-- 支持无感刷新
-- 支持退出登录
-- 支持废弃某个 refreshToken
-- 支持多端登录扩展
-
-#### 字段设计
-
-| 字段               | 类型     | 必填 | 说明                                          |
-| ------------------ | -------- | ---- | --------------------------------------------- |
-| `_id`              | ObjectId | 是   | session 主键，也可作为 refresh token 的 `sid` |
-| `userId`           | ObjectId | 是   | 对应用户                                      |
-| `refreshTokenHash` | string   | 是   | refreshToken 的哈希                           |
-| `userAgent`        | string   | 否   | 客户端信息                                    |
-| `ip`               | string   | 否   | IP 地址                                       |
-| `expiresAt`        | Date     | 是   | 过期时间                                      |
-| `revokedAt`        | Date     | 否   | 注销时间                                      |
-| `createdAt`        | Date     | 是   | 创建时间                                      |
-| `updatedAt`        | Date     | 是   | 更新时间                                      |
-
-#### 索引
-
-- `userId` 普通索引
-- `expiresAt` TTL 索引，`expireAfterSeconds: 0`
-
-#### 示例文档
-
-```json
-{
-  "_id": { "$oid": "67d0f7d2f0c2e4e7c1a10001" },
-  "userId": { "$oid": "67d0f7d2f0c2e4e7c1a00001" },
-  "refreshTokenHash": "6c4f0e8d8c7f4e3....",
-  "userAgent": "Mozilla/5.0",
-  "ip": "127.0.0.1",
-  "expiresAt": { "$date": "2026-03-19T10:00:00.000Z" },
-  "revokedAt": null,
-  "createdAt": { "$date": "2026-03-12T10:00:00.000Z" },
-  "updatedAt": { "$date": "2026-03-12T10:00:00.000Z" }
-}
-```
-
-#### 文件：`src/auth/schemas/auth.schema.ts`
-
-```ts
-import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
-
-export type AuthSessionDocument = HydratedDocument<AuthSession>;
-
-@Schema({
-  collection: 'auth_sessions',
-  timestamps: true,
-  versionKey: false,
-})
-export class AuthSession {
-  @Prop({
-    type: Types.ObjectId,
-    ref: 'User',
-    required: true,
-    index: true,
-  })
-  userId: Types.ObjectId;
-
-  @Prop({ required: true, trim: true })
-  refreshTokenHash: string;
-
-  @Prop({ trim: true })
-  userAgent?: string;
-
-  @Prop({ trim: true })
-  ip?: string;
-
-  @Prop({ required: true })
-  expiresAt: Date;
-
-  @Prop({ default: null })
-  revokedAt?: Date | null;
-}
-
-export const AuthSessionSchema = SchemaFactory.createForClass(AuthSession);
-
-AuthSessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-```
-
-> 初学者提示  
-> TTL 索引不是“到点立刻删”，而是 MongoDB 后台线程周期性清理，所以看到过期数据短时间仍存在是正常的。
-
-#### `AuthModule` 中如何引入
-
-```ts
-import { Module } from '@nestjs/common';
-import { MongooseModule } from '@nestjs/mongoose';
-import { AuthService } from './auth.service';
-import { AuthController } from './auth.controller';
-import { AuthSession, AuthSessionSchema } from './schemas/auth.schema';
-import { UsersModule } from 'src/users/users.module';
-
-@Module({
-  imports: [
-    MongooseModule.forFeature([
-      { name: AuthSession.name, schema: AuthSessionSchema },
-    ]),
-    UsersModule,
-  ],
-  controllers: [AuthController],
-  providers: [AuthService],
-  exports: [MongooseModule, AuthService],
-})
-export class AuthModule {}
-```
+如果你以后要升级为更正式的项目，再把 `auth_sessions` 拆出来就可以。
 
 ### 16.3 知识库模块 `KnowledgeBasesModule`
 
@@ -1876,20 +1798,19 @@ export class ChatModule {}
 
 - 连接 MongoDB
 - 全局挂载 `mongooseSerializePlugin`
-- 导入 `UsersModule`、`AuthModule`、`KnowledgeBasesModule`、`DocumentsModule`、`ChatModule`
+- 当前仓库这一步先只导入 `UsersModule`
+- 其他业务模块等你后面真正实现到那一章时再逐步接进来
 
 ```ts
 import { Module } from '@nestjs/common';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
-import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
-import { KnowledgeBasesModule } from './knowledge-bases/knowledge-bases.module';
-import { DocumentsModule } from './documents/documents.module';
-import { ChatModule } from './chat/chat.module';
 import { mongooseSerializePlugin } from './common/plugins/mongoose-serialize.plugin';
 import { ResponseInterceptor } from './common/interceptor/response.interceptor';
 import { AllExceptionsFilter } from './common/filters/exception.filter';
@@ -1931,11 +1852,8 @@ import { JwtStrategy } from './common/utils/jwt.strategy';
     }),
     PassportModule,
     UsersModule,
-    KnowledgeBasesModule,
-    DocumentsModule,
-    ChatModule,
-    AuthModule,
   ],
+  controllers: [AppController],
   providers: [
     {
       provide: APP_INTERCEPTOR,
@@ -1949,6 +1867,7 @@ import { JwtStrategy } from './common/utils/jwt.strategy';
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
     },
+    AppService,
     JwtStrategy,
   ],
 })
@@ -1997,16 +1916,19 @@ export class AppModule {}
 4. 列表接口只做最小分页 DTO，不在主线中引入复杂筛选
 5. 面向初学者时，优先写“显式完整类”，而不是过度抽象
 
-### 17.2 认证模块 DTO
+### 17.2 用户模块中的认证 DTO
 
 #### 这一组 DTO 用在哪些接口
 
-- `RegisterDto` -> `POST /auth/register`
-- `LoginDto` -> `POST /auth/login`
-- `RefreshTokenDto` -> `POST /auth/refresh`
-- `LogoutDto` -> `POST /auth/logout`
+- `RegisterDto` -> `POST /users/register`
+- `LoginDto` -> `POST /users/login`
+- `RefreshTokenDto` -> `POST /users/refresh`
 
-#### 文件：`src/auth/dto/register.dto.ts`
+这次我们把认证能力并进 `UsersModule`，所以这组 DTO 的推荐落点也改成：
+
+- `src/users/dto/*`
+
+#### 文件：`src/users/dto/register.dto.ts`
 
 ```ts
 import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
@@ -2024,7 +1946,7 @@ export class RegisterDto {
   @IsString()
   @MinLength(2, { message: '昵称至少 2 个字符' })
   @MaxLength(30, { message: '昵称长度不能超过 30 个字符' })
-  displayName: string;
+  username: string;
 }
 ```
 
@@ -2032,7 +1954,7 @@ export class RegisterDto {
 
 - `email` 限长是为了避免极端脏数据
 - `password` 设最小长度 8，是最常见的入门安全下限
-- `displayName` 控制在 2 到 30，足够展示又不会太宽
+- `username` 控制在 2 到 30，足够展示又不会太宽
 
 最小请求示例：
 
@@ -2040,11 +1962,11 @@ export class RegisterDto {
 {
   "email": "alice@example.com",
   "password": "12345678",
-  "displayName": "Alice"
+  "username": "Alice"
 }
 ```
 
-#### 文件：`src/auth/dto/login.dto.ts`
+#### 文件：`src/users/dto/login.dto.ts`
 
 ```ts
 import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
@@ -2075,7 +1997,7 @@ export class LoginDto {
 }
 ```
 
-#### 文件：`src/auth/dto/refresh-token.dto.ts`
+#### 文件：`src/users/dto/refresh-token.dto.ts`
 
 ```ts
 import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
@@ -2091,7 +2013,7 @@ export class RefreshTokenDto {
 为什么这样校验：
 
 - JWT 很长，所以不要把长度上限写得太短
-- 这里校验的是“它是一个非空字符串”，真正的合法性校验在 service 中做验签和查 session
+- 这里校验的是“它是一个非空字符串”，真正的合法性校验在 service 中做验签和比对 `users.refreshToken`
 
 最小请求示例：
 
@@ -2101,31 +2023,14 @@ export class RefreshTokenDto {
 }
 ```
 
-#### 文件：`src/auth/dto/logout.dto.ts`
+#### 为什么 `logout` 不再需要 DTO
 
-```ts
-import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+因为当前简化方案里：
 
-export class LogoutDto {
-  @IsString()
-  @IsNotEmpty({ message: 'refreshToken 不能为空' })
-  @MaxLength(2000, { message: 'refreshToken 长度异常' })
-  refreshToken: string;
-}
-```
+- `logout` 只要求用户已经带着有效 `accessToken`
+- 服务端根据当前登录用户直接把 `users.refreshToken` 设为 `undefined`
 
-为什么这样校验：
-
-- `logout` 需要知道你要废弃的是哪一个 refresh session
-- 我们故意没有让 `logout` 复用 `RefreshTokenDto`，因为初学者复制单文件时，`LogoutDto` 更直观
-
-最小请求示例：
-
-```json
-{
-  "refreshToken": "eyJhbGciOi..."
-}
-```
+也就是说，`POST /users/logout` 在这个练习版本里可以不传 body。
 
 ### 17.3 知识库模块 DTO
 
@@ -2484,57 +2389,71 @@ GET /chat/sessions/67d0f7d2f0c2e4e7c1a50001/messages?page=1&pageSize=10
 - service 层边界数据更适合用 `type`
 - 向量检索结果、流式事件、对象存储输入输出都不应该伪装成 DTO
 
-#### 文件：`src/common/types/auth.types.ts`
+#### 文件：`src/users/users.ts`
 
 ```ts
-export type TokenPair = {
+export type UserProfile = {
+  id: string;
+  email: string;
+  username: string;
+  lastLoginAt?: Date;
+};
+
+export type TokenPairResult = {
+  user: UserProfile;
   accessToken: string;
   refreshToken: string;
 };
 
-export type CurrentUser = {
+export type LogoutResult = {
+  success: boolean;
+};
+
+export type JwtTokenPayload = {
   userId: string;
   email: string;
+  tokenType: 'access' | 'refresh';
 };
 
-export type JwtAccessPayload = {
-  sub: string;
+export type AuthenticatedUser = {
+  userId: string;
   email: string;
-  type: 'access';
-  iat?: number;
-  exp?: number;
+  tokenType: 'access';
 };
 
-export type JwtRefreshPayload = {
-  sub: string;
-  sid: string;
-  type: 'refresh';
-  iat?: number;
-  exp?: number;
+export type UserRequest = {
+  user: AuthenticatedUser;
 };
 
-export type AuthRequestMeta = {
-  userAgent?: string;
-  ip?: string;
-};
+export const isJwtTokenPayload = (value: unknown): value is JwtTokenPayload => {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
 
-export type IssueTokenResult = {
-  user: {
-    id: string;
-    email: string;
-    displayName: string;
-  };
-  accessToken: string;
-  refreshToken: string;
+  const candidate = value as Record<string, unknown>;
+
+  return (
+    typeof candidate.userId === 'string' &&
+    typeof candidate.email === 'string' &&
+    (candidate.tokenType === 'access' || candidate.tokenType === 'refresh')
+  );
 };
 ```
 
 这些类型的作用：
 
-- `CurrentUser`：Guard 校验通过后挂到 `request.user`
-- `JwtAccessPayload` / `JwtRefreshPayload`：让验签结果有明确字段结构
-- `AuthRequestMeta`：统一注册、登录时的来源信息
-- `IssueTokenResult`：统一 `register/login/refresh` 的返回结构
+- `UserProfile`：统一当前用户的对外返回结构
+- `TokenPairResult`：统一 `register/login/refresh` 的返回结构
+- `LogoutResult`：统一 `logout` 的返回结构
+- `JwtTokenPayload`：当前项目里 accessToken / refreshToken 共用的 payload 结构
+- `AuthenticatedUser` / `UserRequest`：当前仓库没有额外抽 `CurrentUser` 装饰器，而是直接通过 `@Request() req: UserRequest` 读取用户信息
+- `isJwtTokenPayload`：让 `JwtStrategy` 和 `refresh` 验签后的 payload 有明确结构
+
+这一节和以前最大的不同是：
+
+- 当前项目没有单独的 `src/common/types/auth.types.ts`
+- 认证相关类型都先集中放在 `src/users/users.ts`
+- 这样更适合你现在这种“先把 users 模块看明白”的学习节奏
 
 #### 文件：`src/chat/types/chat.types.ts`
 
@@ -2696,7 +2615,7 @@ export type StoredObjectRef = {
   "user": {
     "id": "67d0f7d2f0c2e4e7c1a00001",
     "email": "alice@example.com",
-    "displayName": "Alice"
+    "username": "Alice"
   },
   "accessToken": "eyJhbGciOi...",
   "refreshToken": "eyJhbGciOi..."
@@ -2741,14 +2660,14 @@ DTO 不是越多越好。
 - 可读性更高
 - 不用为了一个 `id` 再建一个 params DTO 文件
 
-#### 2. `GET /auth/me`
+#### 2. `GET /users/me`
 
 这个接口没有 body，也不需要 query DTO。
 
 它只依赖：
 
 - `JwtAuthGuard`
-- `CurrentUser` 装饰器
+- `@Request() req: UserRequest`
 
 #### 3. `POST /documents/:id/reindex`
 
@@ -2799,10 +2718,9 @@ MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.xxxxx.mongodb.net/?retr
 MONGODB_DB_NAME=knowledge_base_app
 MONGODB_VECTOR_INDEX_NAME=kb_chunk_vector_index
 
-JWT_ACCESS_SECRET=replace-with-a-very-long-random-string
-JWT_ACCESS_EXPIRES_IN=15m
-JWT_REFRESH_SECRET=replace-with-another-very-long-random-string
-JWT_REFRESH_EXPIRES_IN=7d
+JWT_SECRET=replace-with-a-very-long-random-string
+JWT_SECRET_EXPIRESIN=7d
+JWT_SECRET_REFRESH_EXPIRESIN=30d
 BCRYPT_SALT_ROUNDS=10
 
 R2_ACCOUNT_ID=your-cloudflare-account-id
@@ -2826,22 +2744,23 @@ UPLOAD_MAX_FILE_SIZE_MB=10
 
 ### 18.1 每个变量的意思
 
-| 变量                          | 说明                                          |
-| ----------------------------- | --------------------------------------------- |
-| `MONGODB_URI`                 | Atlas 连接串                                  |
-| `MONGODB_DB_NAME`             | 业务数据库名                                  |
-| `MONGODB_VECTOR_INDEX_NAME`   | 你在 Atlas UI 里创建的向量索引名称            |
-| `JWT_ACCESS_SECRET`           | accessToken 的签名密钥                        |
-| `JWT_REFRESH_SECRET`          | refreshToken 的签名密钥                       |
-| `R2_ACCOUNT_ID`               | Cloudflare 账户 ID                            |
-| `R2_ACCESS_KEY_ID`            | R2 访问 key                                   |
-| `R2_SECRET_ACCESS_KEY`        | R2 密钥                                       |
-| `R2_BUCKET_NAME`              | 存原始文件的 bucket                           |
-| `OPENAI_BASE_URL`             | OpenAI 兼容接口地址                           |
-| `OPENAI_CHAT_MODEL`           | 问答模型                                      |
-| `OPENAI_EMBEDDING_MODEL`      | Embedding 模型                                |
-| `OPENAI_EMBEDDING_DIMENSIONS` | 向量维度，必须跟索引一致                      |
-| `OPENAI_STREAM_USAGE`         | 某些兼容平台不支持 `stream_options`，需要关掉 |
+| 变量                           | 说明                                          |
+| ------------------------------ | --------------------------------------------- |
+| `MONGODB_URI`                  | Atlas 连接串                                  |
+| `MONGODB_DB_NAME`              | 业务数据库名                                  |
+| `MONGODB_VECTOR_INDEX_NAME`    | 你在 Atlas UI 里创建的向量索引名称            |
+| `JWT_SECRET`                   | accessToken 和 refreshToken 共用的签名密钥    |
+| `JWT_SECRET_EXPIRESIN`         | accessToken 默认有效期                        |
+| `JWT_SECRET_REFRESH_EXPIRESIN` | refreshToken 默认有效期                       |
+| `R2_ACCOUNT_ID`                | Cloudflare 账户 ID                            |
+| `R2_ACCESS_KEY_ID`             | R2 访问 key                                   |
+| `R2_SECRET_ACCESS_KEY`         | R2 密钥                                       |
+| `R2_BUCKET_NAME`               | 存原始文件的 bucket                           |
+| `OPENAI_BASE_URL`              | OpenAI 兼容接口地址                           |
+| `OPENAI_CHAT_MODEL`            | 问答模型                                      |
+| `OPENAI_EMBEDDING_MODEL`       | Embedding 模型                                |
+| `OPENAI_EMBEDDING_DIMENSIONS`  | 向量维度，必须跟索引一致                      |
+| `OPENAI_STREAM_USAGE`          | 某些兼容平台不支持 `stream_options`，需要关掉 |
 
 ---
 
@@ -3270,10 +3189,9 @@ export const envValidationSchema = Joi.object({
   MONGODB_DB_NAME: Joi.string().required(),
   MONGODB_VECTOR_INDEX_NAME: Joi.string().required(),
 
-  JWT_ACCESS_SECRET: Joi.string().required(),
-  JWT_ACCESS_EXPIRES_IN: Joi.string().default('15m'),
-  JWT_REFRESH_SECRET: Joi.string().required(),
-  JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
+  JWT_SECRET: Joi.string().required(),
+  JWT_SECRET_EXPIRESIN: Joi.string().default('7d'),
+  JWT_SECRET_REFRESH_EXPIRESIN: Joi.string().default('30d'),
   BCRYPT_SALT_ROUNDS: Joi.number().default(10),
 
   R2_ACCOUNT_ID: Joi.string().required(),
@@ -3298,16 +3216,19 @@ export const envValidationSchema = Joi.object({
 
 ### 22.4 创建分领域配置文件
 
-例如 `src/config/auth.config.ts`：
+如果你走的是当前这条“个人练习简化版”主线，其实可以不再额外拆 `auth.config.ts`，
+直接先用 `ConfigService.get('JWT_SECRET')`、`ConfigService.get('JWT_SECRET_EXPIRESIN')` 和
+`ConfigService.get('JWT_SECRET_REFRESH_EXPIRESIN')` 就够了。
+
+如果你仍然想保留分领域配置文件，也可以简化成下面这样：
 
 ```ts
 import { registerAs } from '@nestjs/config';
 
 export default registerAs('auth', () => ({
-  accessSecret: process.env.JWT_ACCESS_SECRET!,
-  accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
-  refreshSecret: process.env.JWT_REFRESH_SECRET!,
-  refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
+  jwtSecret: process.env.JWT_SECRET!,
+  accessExpiresIn: process.env.JWT_SECRET_EXPIRESIN ?? '7d',
+  refreshExpiresIn: process.env.JWT_SECRET_REFRESH_EXPIRESIN ?? '30d',
   bcryptSaltRounds: Number(process.env.BCRYPT_SALT_ROUNDS ?? 10),
 }));
 ```
@@ -3498,7 +3419,7 @@ export class ParseObjectIdPipe implements PipeTransform<string, string> {
 这一节你现在可以直接按**模块顺序**回看第 16 章，不需要再在本章重复跳读：
 
 - `16.1 用户模块 UsersModule`
-- `16.2 认证模块 AuthModule`
+- `16.2 UsersModule 中的认证能力`
 - `16.3 知识库模块 KnowledgeBasesModule`
 - `16.4 文档模块 DocumentsModule`
 - `16.5 聊天模块 ChatModule`
@@ -3558,7 +3479,7 @@ export enum DocumentStatus {
 ### 23.9 完成检查清单
 
 - [ ] MongoDB Atlas 已连接成功
-- [ ] 7 个集合对应的 Schema 都已定义
+- [ ] 6 个集合对应的 Schema 都已定义
 - [ ] 唯一索引、TTL 索引已配置
 - [ ] 文档状态枚举已定义
 - [ ] `ParseObjectIdPipe` 已可复用
@@ -3588,20 +3509,27 @@ export enum DocumentStatus {
 
 ### 24.3 认证策略定稿
 
-本教程固定采用：
+当前仓库已经定下来的方案是：
 
-- `accessToken`: JWT，15 分钟
-- `refreshToken`: JWT，7 天
-- refreshToken 明文不落库，只存哈希
-- `auth_sessions._id` 作为会话 id `sid`
+- 不单独创建 `AuthModule`
+- 不单独创建 `auth_sessions`
+- 认证逻辑全部落在 `UsersModule`
+- 对外认证路由统一为 `/users/*`
+- `refreshToken` 字段继续放在 `users` 集合里
+- `users.refreshToken` 字段名不改，但保存的是 **bcrypt 哈希**，不是明文
+- `accessToken` 和 `refreshToken` 共用同一个 `JWT_SECRET`
+- `JWT_SECRET_EXPIRESIN` 是 `JwtModule.registerAsync` 的全局默认过期时间，当前主线里它就是 accessToken 的有效期
+- `JWT_SECRET_REFRESH_EXPIRESIN` 只在签发 refreshToken 时单独覆盖 `expiresIn`
+- 当前实现不会强制把 email 转成小写，而是按用户输入原样保存和查询
+- 当前 `register` 逻辑除了检查 email，也会顺手检查 `username` 是否重复；但数据库的硬约束只有 `users.email` 唯一索引
 
 #### accessToken 建议 payload
 
 ```json
 {
-  "sub": "userId",
+  "userId": "userId",
   "email": "alice@example.com",
-  "type": "access"
+  "tokenType": "access"
 }
 ```
 
@@ -3609,190 +3537,248 @@ export enum DocumentStatus {
 
 ```json
 {
-  "sub": "userId",
-  "sid": "sessionId",
-  "type": "refresh"
+  "userId": "userId",
+  "email": "alice@example.com",
+  "tokenType": "refresh"
 }
 ```
 
-### 24.4 为什么 refreshToken 要存哈希
+### 24.4 为什么这次不拆 `auth_sessions`
 
-因为如果数据库泄漏，攻击者不应该直接拿数据库内容登录。
+因为你当前做的是个人练习项目，主线目标是先把：
 
-密码存哈希，refreshToken 也要存哈希。
+- 注册登录
+- 文档上传
+- RAG 检索问答
 
-### 24.5 推荐工具函数
+完整跑通。
 
-`src/common/utils/hash.util.ts`
+如果现在就拆 `auth_sessions`，你还要多维护：
 
-```ts
-import { createHash } from 'node:crypto';
+- 一张额外集合
+- 一套会话查询和失效逻辑
+- 多端登录、多设备信息、TTL 等更复杂的边界
 
-export function sha256(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
-```
+所以这版主线选择：
 
-### 24.6 `AuthService` 关键逻辑
+- `users` 同时存用户基础信息和当前有效 refreshToken 的哈希
+- `UsersModule` 直接提供 `/users/register`、`/users/login`、`/users/refresh`、`/users/logout`、`/users/me`
 
-#### 注册
+这个方案的边界也要明确：
 
-1. 根据 email 查用户是否已存在
-2. bcrypt 哈希密码
-3. 创建用户
-4. 创建 session id
-5. 签发 accessToken / refreshToken
-6. 保存 refreshTokenHash
-7. 返回用户和双 token
+- 更偏向单用户、单设备、单会话练习
+- 后一次登录或刷新会覆盖上一次保存的 refreshToken 哈希
+- 以后如果你要做多设备管理，再把 `auth_sessions` 拆出去
 
-#### 登录
+### 24.5 为什么 refreshToken 也用 bcrypt
 
-1. 根据 email 找用户
-2. 比较密码
-3. 创建新 session
-4. 签发双 token
-5. 保存 session
+你现在的密码就是用 `bcryptjs` 哈希的，所以 refreshToken 也统一用同一种思路：
 
-#### 刷新
+- 签发给客户端的是原始 refreshToken
+- 落库到 `users.refreshToken` 的是 bcrypt 哈希
+- 刷新时不是直接字符串相等，而是 `bcrypt.compare(原始 refreshToken, 哈希值)`
 
-1. 校验 refreshToken 签名和有效期
-2. 从 payload 拿到 `sub` 和 `sid`
-3. 找到 `auth_sessions`
-4. 检查是否 revoked
-5. 比较 hash
-6. 重新签发 accessToken 和 refreshToken
-7. 更新数据库中的 refreshTokenHash 和 expiresAt
+这样做的好处是：
 
-#### 退出登录
+- 如果数据库泄漏，攻击者拿不到可直接使用的 refreshToken
+- 密码和 refreshToken 的保护方式一致，初学者更容易记住
+- 你不会误把 refreshToken 当成普通文本随手存起来
 
-1. 解析 refreshToken
-2. 找到对应 session
-3. 写入 `revokedAt`
+### 24.6 当前项目里的文件分工
 
-### 24.7 `AuthService` 核心代码骨架
+认证主线现在落在这些文件里：
 
-下面这段代码默认你已经从 `src/common/types/auth.types.ts` 导入了：
+- `src/users/schemas/user.schema.ts`
+- `src/users/users.service.ts`
+- `src/users/users.controller.ts`
+- `src/common/utils/jwt.strategy.ts`
+- `src/common/guard/jwt-auth.guard.ts`
 
-- `AuthRequestMeta`
-- `IssueTokenResult`
-- `JwtAccessPayload`
-- `JwtRefreshPayload`
+它们各自负责什么：
+
+- `user.schema.ts`：定义 `users` 集合结构，密码在 `pre('save')` 中做 bcrypt 哈希
+- `users.service.ts`：真正的注册、登录、刷新、退出、当前用户逻辑
+- `users.controller.ts`：只接 HTTP 请求和返回统一响应
+- `jwt.strategy.ts`：校验 accessToken，拒绝把 refreshToken 当 accessToken 用
+- `jwt-auth.guard.ts`：配合 `@Public()` 决定哪些接口免鉴权，哪些接口必须带 Bearer Token
+
+### 24.7 `UsersService` 关键逻辑
+
+#### 注册 `register`
+
+1. 根据 `email` 和 `username` 查询是否已存在冲突
+2. 创建 `User` 文档
+3. 由 schema 的 `pre('save')` 自动把密码做 bcrypt 哈希
+4. 调用统一的 `issueTokenPair`
+5. 生成 accessToken 和 refreshToken
+6. 把 refreshToken 做 bcrypt 哈希后写入 `users.refreshToken`
+7. 返回用户信息和双 token
+
+#### 登录 `login`
+
+1. 按用户输入原样查询 `email`
+2. 调用 `user.comparePassword(password)` 校验密码
+3. 把 `UserDocument` 交给 `issueTokenPair`
+4. `issueTokenPair` 内部会顺手更新 `lastLoginAt`
+5. 重新签发双 token，并覆盖保存新的 refreshToken 哈希
+
+#### 刷新 `refresh`
+
+1. 先用 `jwtService.verifyAsync` 验签 refreshToken
+   这里没有额外再传 `secret`，直接复用 `JwtModule.registerAsync` 的全局配置
+2. 校验 payload 至少包含 `userId`、`email`、`tokenType`
+3. 强制要求 `tokenType === 'refresh'`
+4. 根据 `userId` 找用户
+5. 使用 `bcrypt.compare(原始 refreshToken, users.refreshToken)` 比对
+6. 校验通过后重新签发 accessToken 和 refreshToken
+7. 用新 refreshToken 的哈希覆盖旧值
+
+#### 退出登录 `logout`
+
+1. 先通过 accessToken 拿到当前用户 `userId`
+2. 查询用户
+3. 把 `users.refreshToken` 设为 `undefined`
+4. 返回 `{ success: true }`
+
+#### 获取当前用户 `me`
+
+1. 先通过 accessToken 拿到当前用户 `userId`
+2. 查询用户
+3. 返回脱敏后的用户信息，不返回 `password` 和 `refreshToken`
+
+### 24.8 `UsersService` 核心代码骨架
+
+下面这段代码要和你当前仓库里的实现保持同一思路：
 
 ```ts
 @Injectable()
-export class AuthService {
+export class UsersService {
   constructor(
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
-    @InjectModel(AuthSession.name)
-    private readonly authSessionModel: Model<AuthSessionDocument>,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
 
-  async register(
-    dto: RegisterDto,
-    meta?: AuthRequestMeta,
-  ): Promise<IssueTokenResult> {
-    const email = dto.email.toLowerCase();
-
-    const existed = await this.userModel.findOne({ email });
-    if (existed) {
-      throw new ConflictException('邮箱已存在');
-    }
-
-    const passwordHash = await bcrypt.hash(
-      dto.password,
-      this.configService.get<number>('auth.bcryptSaltRounds') ?? 10,
-    );
-
-    const user = await this.userModel.create({
-      email,
-      passwordHash,
-      displayName: dto.displayName,
-      status: 'active',
+  async register(dto: RegisterDto): Promise<TokenPairResult> {
+    const existingUser = await this.userModel.findOne({
+      $or: [{ email: dto.email }, { username: dto.username }],
     });
 
-    return this.createSessionAndIssueTokens(user, meta);
+    if (existingUser) {
+      throw new ConflictException('邮箱或用户名已存在');
+    }
+
+    const user = new this.userModel({
+      email: dto.email,
+      password: dto.password,
+      username: dto.username,
+    });
+
+    await user.save();
+
+    return this.issueTokenPair(user, { touchLastLoginAt: true });
   }
 
-  async login(
-    dto: LoginDto,
-    meta?: AuthRequestMeta,
-  ): Promise<IssueTokenResult> {
-    const email = dto.email.toLowerCase();
-    const user = await this.userModel.findOne({ email });
+  async login(dto: LoginDto): Promise<TokenPairResult> {
+    const user = await this.userModel.findOne({ email: dto.email });
 
     if (!user) {
       throw new UnauthorizedException('邮箱或密码错误');
     }
 
-    const matched = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!matched) {
+    const isPasswordValid = await user.comparePassword(dto.password);
+    if (!isPasswordValid) {
       throw new UnauthorizedException('邮箱或密码错误');
     }
 
-    user.lastLoginAt = new Date();
+    return this.issueTokenPair(user, { touchLastLoginAt: true });
+  }
+
+  async refresh(dto: RefreshTokenDto): Promise<TokenPairResult> {
+    const payload = await this.verifyRefreshToken(dto.refreshToken);
+    const user = await this.userModel.findById(payload.userId);
+
+    if (!user || !user.refreshToken) {
+      throw new UnauthorizedException('refreshToken 无效或已过期');
+    }
+
+    const matched = await bcrypt.compare(dto.refreshToken, user.refreshToken);
+    if (!matched) {
+      throw new UnauthorizedException('refreshToken 无效或已过期');
+    }
+
+    return this.issueTokenPair(user);
+  }
+
+  async logout(userId: string): Promise<LogoutResult> {
+    const user = await this.userModel.findById(userId);
+
+    if (!user) {
+      throw new UnauthorizedException('登录状态已失效，请重新登录');
+    }
+
+    user.refreshToken = undefined;
     await user.save();
 
-    return this.createSessionAndIssueTokens(user, meta);
+    return {
+      success: true,
+    };
   }
 }
 ```
 
-### 24.8 创建 session 和签发 token 的推荐写法
+### 24.9 统一签发 token 并回写 `users.refreshToken`
+
+当前简化版的重点是：`register/login/refresh` 最后都只盯一个 `issueTokenPair()`。
+
+它的真实实现逻辑是：
+
+- accessToken 直接复用 `JwtModule.registerAsync` 里的全局默认配置
+- refreshToken 只额外覆盖自己的 `expiresIn`
+- `refreshToken` 的哈希仍然使用 `bcrypt`
+
+对应代码骨架如下：
 
 ```ts
-private async createSessionAndIssueTokens(
+private async issueTokenPair(
   user: UserDocument,
-  meta?: AuthRequestMeta,
-): Promise<IssueTokenResult> {
-  const sessionId = new Types.ObjectId();
+  options: { touchLastLoginAt?: boolean } = {},
+): Promise<TokenPairResult> {
+  if (options.touchLastLoginAt) {
+    user.lastLoginAt = new Date();
+  }
 
-  const accessPayload: JwtAccessPayload = {
-    sub: user.id,
-    email: user.email,
-    type: "access",
-  };
+  const [accessToken, refreshToken] = await Promise.all([
+    this.jwtService.signAsync({
+      userId: user.id,
+      email: user.email,
+      tokenType: 'access',
+    }),
+    this.jwtService.signAsync(
+      {
+        userId: user.id,
+        email: user.email,
+        tokenType: 'refresh',
+      },
+      {
+        expiresIn:
+          this.configService.get<JwtSignOptions['expiresIn']>(
+            'JWT_SECRET_REFRESH_EXPIRESIN',
+          ) ?? '30d',
+      },
+    ),
+  ]);
 
-  const refreshPayload: JwtRefreshPayload = {
-    sub: user.id,
-    sid: sessionId.toHexString(),
-    type: "refresh",
-  };
-
-  const accessToken = await this.jwtService.signAsync(
-    accessPayload,
-    {
-      secret: this.configService.getOrThrow<string>("auth.accessSecret"),
-      expiresIn: this.configService.getOrThrow<string>("auth.accessExpiresIn"),
-    },
-  );
-
-  const refreshToken = await this.jwtService.signAsync(
-    refreshPayload,
-    {
-      secret: this.configService.getOrThrow<string>("auth.refreshSecret"),
-      expiresIn: this.configService.getOrThrow<string>("auth.refreshExpiresIn"),
-    },
-  );
-
-  const refreshTokenHash = sha256(refreshToken);
-  const expiresAt = this.buildRefreshExpiresAt();
-
-  await this.authSessionModel.create({
-    _id: sessionId,
-    userId: user._id,
-    refreshTokenHash,
-    userAgent: meta?.userAgent,
-    ip: meta?.ip,
-    expiresAt,
-  });
+  const salt = await bcrypt.genSalt(10);
+  user.refreshToken = await bcrypt.hash(refreshToken, salt);
+  await user.save();
 
   return {
     user: {
       id: user.id,
       email: user.email,
-      displayName: user.displayName,
+      username: user.username,
+      lastLoginAt: user.lastLoginAt,
     },
     accessToken,
     refreshToken,
@@ -3800,101 +3786,89 @@ private async createSessionAndIssueTokens(
 }
 ```
 
-### 24.9 `JwtAuthGuard`
+这一步你要特别记住两件事：
 
-因为本教程不引入 Passport，所以我们写一个更容易理解的自定义 Guard。
+- accessToken 不再在 service 里重复传 `secret` 或默认 `expiresIn`
+- 它直接吃 `AppModule` 里 `JwtModule.registerAsync` 的全局默认配置
+- 返回给客户端的是原始 refreshToken
+- 写进数据库的是它的 bcrypt 哈希
+
+当前 `users.service.ts` 里你还会看到 `createTokenPayload()` 和 `signToken()` 两个辅助方法。
+
+它们现在还保留在文件里，但主链路已经没有直接走这两个方法了。你在学习时，先重点盯：
+
+- `register`
+- `login`
+- `refresh`
+- `issueTokenPair`
+- `verifyRefreshToken`
+
+### 24.10 `JwtStrategy` 和 `JwtAuthGuard`
+
+当前仓库已经用了 `passport-jwt`，所以 accessToken 鉴权的关键点是：
+
+- 只从 `Authorization: Bearer <token>` 读取 token
+- 只允许 `tokenType === 'access'` 的 token 通过
+- refreshToken 不允许直接访问受保护接口
 
 ```ts
-@Injectable()
-export class JwtAuthGuard implements CanActivate {
-  constructor(
-    private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
-  ) {}
+validate(payload: unknown): AuthenticatedUser {
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const authHeader = request.headers.authorization;
-
-    if (!authHeader?.startsWith('Bearer ')) {
-      throw new UnauthorizedException('缺少 accessToken');
-    }
-
-    const token = authHeader.slice('Bearer '.length);
-
-    try {
-      const payload = await this.jwtService.verifyAsync<JwtAccessPayload>(
-        token,
-        {
-          secret: this.configService.getOrThrow<string>('auth.accessSecret'),
-        },
-      );
-
-      const currentUser: CurrentUser = {
-        userId: payload.sub,
-        email: payload.email,
-      };
-      request.user = currentUser;
-
-      return true;
-    } catch {
-      throw new UnauthorizedException('accessToken 无效或已过期');
-    }
+  if (!isJwtTokenPayload(payload) || payload.tokenType !== 'access') {
+    throw new UnauthorizedException('accessToken 无效');
   }
+
+  return {
+    userId: payload.userId,
+    email: payload.email,
+    tokenType: 'access',
+  };
 }
 ```
 
-### 24.10 `CurrentUser` 装饰器
+`JwtAuthGuard` 的职责则是：
 
-```ts
-export const CurrentUser = createParamDecorator(
-  (_data: unknown, ctx: ExecutionContext) => {
-    const request = ctx.switchToHttp().getRequest();
-    return request.user as CurrentUser;
-  },
-);
-```
+- 如果接口上有 `@Public()`，直接放行
+- 否则进入 JWT 验证流程
+- 对过期 token、格式错误、签名错误返回更友好的提示
 
-### 24.11 `AuthController` 最低要实现哪些接口
+如果你现在的目标是分析请求经过了哪一层，这两个日志是有帮助的。
 
-- `POST /auth/register`
-- `POST /auth/login`
-- `POST /auth/refresh`
-- `POST /auth/logout`
-- `GET /auth/me`
+### 24.11 `UsersController` 实际对外接口
 
-`/auth/logout` 推荐要求传 accessToken 和 refreshToken，最简单做法是：
+这一版最终对外暴露的是：
 
-- 接口受保护，需要 accessToken
-- 请求体里再传 `LogoutDto`
+- `POST /users/register`
+- `POST /users/login`
+- `POST /users/refresh`
+- `POST /users/logout`
+- `GET /users/me`
 
-### 24.12 Swagger 的 Bearer 配置
+其中：
 
-记得在受保护接口上加：
+- `register`、`login`、`refresh` 是公开接口，要加 `@Public()`
+- `logout`、`me` 是受保护接口，要依赖 `JwtAuthGuard`
+- `logout` 不需要 body DTO，因为它只需要当前登录用户
+- `logout` 和 `me` 在 Swagger 中可以加 `@ApiBearerAuth()`
 
-```ts
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
-```
-
-### 24.13 手动验收命令
+### 24.12 手动验收命令
 
 注册：
 
 ```bash
-curl -X POST http://localhost:3000/auth/register \
+curl -X POST http://localhost:3000/users/register \
   -H "Content-Type: application/json" \
   -d '{
     "email":"alice@example.com",
     "password":"12345678",
-    "displayName":"Alice"
+    "username":"Alice"
   }'
 ```
 
 登录：
 
 ```bash
-curl -X POST http://localhost:3000/auth/login \
+curl -X POST http://localhost:3000/users/login \
   -H "Content-Type: application/json" \
   -d '{
     "email":"alice@example.com",
@@ -3902,30 +3876,54 @@ curl -X POST http://localhost:3000/auth/login \
   }'
 ```
 
+获取当前用户：
+
+```bash
+curl -X GET http://localhost:3000/users/me \
+  -H "Authorization: Bearer <你的 access token>"
+```
+
 刷新：
 
 ```bash
-curl -X POST http://localhost:3000/auth/refresh \
+curl -X POST http://localhost:3000/users/refresh \
   -H "Content-Type: application/json" \
   -d '{"refreshToken":"<你的 refresh token>"}'
 ```
 
-### 24.14 常见错误
+退出登录：
 
-- 注册成功但 email 没转小写，后面会有大小写重复问题
-- 刷新 token 时只验签，不查 session
-- refreshToken 明文落库
-- logout 只在前端删 token，后端没废弃 session
+```bash
+curl -X POST http://localhost:3000/users/logout \
+  -H "Authorization: Bearer <你的 access token>"
+```
 
-### 24.15 完成检查清单
+你还应该多做一步验证：
+
+1. 先拿旧 refreshToken 刷新一次，得到一对新的 token
+2. 再用“旧 refreshToken”重复调用 `/users/refresh`
+3. 它应该失败，因为数据库里已经换成了新 refreshToken 的哈希
+
+### 24.13 常见错误
+
+- 刷新 token 时只验签，不做 `bcrypt.compare`
+- 把 refreshToken 明文存进 `users.refreshToken`
+- `logout` 只在前端删 token，后端没有把 `users.refreshToken` 设为 `undefined`
+- `JwtStrategy` 不校验 `tokenType`，导致 refreshToken 被误当成 accessToken
+- 误以为 accessToken 也必须在 service 里重复传 `secret` 和默认 `expiresIn`
+
+### 24.14 完成检查清单
 
 - [ ] 注册成功
 - [ ] 重复邮箱会报错
 - [ ] 登录成功
-- [ ] accessToken 可用于受保护接口
+- [ ] `users.password` 是 bcrypt 哈希
+- [ ] `users.refreshToken` 是 bcrypt 哈希
+- [ ] accessToken 可用于 `GET /users/me`
 - [ ] refreshToken 可刷新
+- [ ] 刷新后旧 refreshToken 失效
 - [ ] logout 后 refreshToken 失效
-- [ ] `GET /auth/me` 正常返回
+- [ ] `GET /users/me` 正常返回真实用户信息
 
 ---
 
@@ -5143,7 +5141,7 @@ curl -N -X POST http://localhost:3000/chat/stream \
 ### 30.4 数据正确性测试
 
 - [ ] `users.email` 唯一索引生效
-- [ ] `auth_sessions.expiresAt` TTL 生效
+- [ ] `users.refreshToken` 会在登录、刷新、退出时按预期变化
 - [ ] 删除文档会删除 chunks
 - [ ] 删除知识库会清理关联数据
 - [ ] 删除文档不会清理历史 chat_messages
