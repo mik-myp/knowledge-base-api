@@ -38,8 +38,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     user: TUser | false | null,
     info?: { message?: string; name?: string },
   ): TUser {
-    console.log(err, user);
-
     if (err || !user) {
       const errorMessage = info?.message || '无效的 Token';
       const errorName = info?.name || 'UnknownError';
