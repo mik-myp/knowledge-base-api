@@ -2810,6 +2810,24 @@ RAG_TOP_K=5
 UPLOAD_MAX_FILE_SIZE_MB=10
 ```
 
+如果你走的是“个人练习最低成本方案”，可以把 embedding 改成本地 Ollama，并增加一组可选变量：
+
+```env
+EMBEDDING_PROVIDER=ollama
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text-v2-moe
+```
+
+此时你可以理解为：
+
+- `OPENAI_CHAT_MODEL` 继续负责问答生成
+- `OLLAMA_EMBEDDING_MODEL` 负责本地 embedding
+
+这样做的好处是：
+
+- 先把最容易产生持续费用的 embedding 本地化
+- 问答链的 LLM 仍沿用教程主线，整体改动最小
+
 ### 18.1 每个变量的意思
 
 | 变量                           | 说明                                          |
@@ -4042,6 +4060,118 @@ curl -X POST http://localhost:3000/users/logout \
 2. 初始化 `documentCount = 0`
 3. 初始化 `chunkCount = 0`
 
+### 25.4.1 先把后端 RAG 主链路串起来
+
+从这一章开始，教程会正式进入“知识库为什么能回答问题”的主线。
+
+如果你只记一句话，可以先记这个：
+
+> 本项目的 RAG 不是“把整份 PDF 直接丢给模型”，而是先把文档解析成文本，再切成多个 chunk，给每个 chunk 生成 embedding 并写入 `document_chunks`，最后在用户提问时先检索相关 chunk，再让模型基于这些 chunk 回答。
+
+也就是说，后端真正做的是两条链：
+
+#### 1. 索引链
+
+文档进入系统后，后端执行：
+
+`上传文件 / 提交文本 -> 解析 -> 清洗 -> 切片 -> embedding -> 写入 document_chunks`
+
+这条链解决的是：
+
+- 文档怎么变成“可检索的数据”
+- 哪些文本片段能被后续问题召回
+- chunk 的来源、页码、所属用户、所属知识库怎么保留下来
+
+#### 2. 问答链
+
+用户提问时，后端执行：
+
+`问题 -> 向量检索 -> 取回 topK chunks -> 组装 context -> 调用模型 -> 返回 answer + citations`
+
+这条链解决的是：
+
+- 当前问题应该从哪几个 chunk 里找依据
+- 模型回答时看到哪些上下文
+- 最终答案如何带上引用来源
+
+### 25.4.2 为什么真正参与检索的是 `document_chunks`
+
+在这套设计里：
+
+- `documents` 保存的是原始文档元数据
+- `document_chunks` 保存的是切片文本、向量和检索所需 metadata
+
+所以问答时真正会被搜索的，不是 `documents`，而是 `document_chunks`。
+
+这也是为什么文档后面会反复强调：
+
+- `document_chunks` 是整个 RAG 项目最关键的集合
+- `documents` 负责记录“这份文件是什么”
+- `document_chunks` 负责记录“这份文件里哪些片段可以被召回”
+
+### 25.4.3 为什么 chunk 不只是“切开的文本”
+
+一个 chunk 在本项目里，至少要同时承担 3 个角色：
+
+1. 检索单元  
+模型不会直接在整份文档里找答案，而是在多个 chunk 中找最相关的片段。
+
+2. 权限过滤单元  
+chunk 上必须带 `userId`、`knowledgeBaseId`，这样检索时才能保证用户只查到自己的知识库内容。
+
+3. 引用来源单元  
+chunk 上还要带 `documentId`、`documentTitle`、`pageNumber`、`chunkIndex`，这样回答返回时才能生成 citation。
+
+所以 `document_chunks` 不是单纯的“向量表”，而是：
+
+- 检索数据
+- 权限隔离数据
+- 来源追踪数据
+
+三者合在一起的结果。
+
+### 25.4.4 上传文件和直接提交 Markdown 文本，本质差别在哪里
+
+从 RAG 主链路来看：
+
+- 上传 PDF：先走 `PDFLoader` 解析
+- 上传 TXT / MD：先把文件 buffer 转成字符串
+- 直接提交 Markdown 文案：本质上等同于“已经拿到字符串的 MD 文档”
+
+也就是说，它们真正不同的只有“解析入口”。
+
+一旦进入解析后的统一文本结构，后面的步骤其实完全一样：
+
+- `normalizeText`
+- `splitDocuments`
+- 构造 `chunkDocs`
+- 生成 embedding
+- 写入 `document_chunks`
+
+所以你后面如果要扩展 `docx`、网页抓取、OCR，本质上也只是给“解析阶段”增加新的入口，而不是推翻整个 RAG 架构。
+
+### 25.4.5 后面各章分别在补哪一段能力
+
+为了避免学到一半觉得“东西很多很散”，这里先给你一张导航图：
+
+- 第 25 章：文件上传、对象存储、`documents` 元数据落库
+- 第 26 章：把原始文件内容解析成文本，并切成 chunk
+- 第 27 章：给 chunk 生成 embedding，写入 `document_chunks`，并打通向量检索
+- 第 28 章：把检索结果组装成 prompt，完成 JSON 问答
+- 第 29 章：在同一条问答链上扩展 SSE 流式输出
+
+你如果从工程视角看，这其实就是把一个完整的 RAG 系统拆成了 5 个连续步骤。
+
+### 25.4.6 读到后面时要始终记住的核心判断
+
+后面每一步设计是否合理，都可以回到这个标准来判断：
+
+- 它有没有帮助“更准确地召回相关 chunk”
+- 它有没有帮助“更安全地限制检索范围”
+- 它有没有帮助“更清楚地展示答案来源”
+
+如果答案是有，那它大概率就是 RAG 主链路里必须存在的步骤。
+
 ### 25.5 接入 Cloudflare R2
 
 `StorageService` 推荐只做对象存储相关的事：
@@ -4491,6 +4621,171 @@ const embeddings = new OpenAIEmbeddings({
   },
 });
 ```
+
+### 27.3.1 个人练习最低成本方案怎么选
+
+如果你的目标是：
+
+- 个人练习
+- 尽量省钱
+- 最好免费
+
+那我给你的推荐顺序是：
+
+#### 方案 A：阿里云百炼 `text-embedding-v4`，优先推荐
+
+如果你本地无法部署 embedding 模型，这就是我最推荐给个人练习项目的方案。
+
+原因很简单：
+
+- 阿里云百炼官方明确提供 OpenAI 兼容的 Embedding 接口
+- 中国内地部署模式下，`text-embedding-v4` 有 `100 万 Token` 免费额度，有效期 `90 天`
+- 免费额度用完之后，价格仍然非常低：`0.5 元 / 百万 Token`
+- 对中文、多语言检索都更友好
+- 继续沿用本教程的 `OpenAIEmbeddings` 思路即可，迁移成本很低
+
+也就是说，对“个人练习 + 远程调用 + 成本尽量低”这个目标来说，它比直接调用 OpenAI 官方 embedding 更适合。
+
+#### 为什么这里优先推荐 `text-embedding-v4`
+
+根据阿里云百炼官方文档：
+
+- `text-embedding-v4` 支持 `100+` 主流语种
+- 默认维度是 `1024`
+- 在中国内地部署模式下有免费额度
+- 并且支持 OpenAI 兼容接口
+
+这几点正好和本教程主线非常契合：
+
+- 你可以继续保留 `OpenAIEmbeddings`
+- 只需要替换 `baseURL`
+- 再把模型名改成 `text-embedding-v4`
+
+所以它是“改动最小、成本最低、最适合个人练习”的远程 embedding 方案。
+
+#### 方案 B：远程 `OpenAIEmbeddings`
+
+这个方案接入最顺，和本教程主线完全一致。
+
+优点：
+
+- 配置简单
+- 稳定
+- 文档示例可以直接照抄
+
+缺点：
+
+- 会持续按 token 计费
+- 不适合长期“零成本练习”
+
+所以这个方案更适合：
+
+- 你想先专注理解 RAG 主链路
+- 你不想先折腾本地模型运行环境
+- 你愿意接受少量 API 成本
+
+#### 为什么我不建议你把“免费 OpenAI API 额度”当主方案
+
+因为免费额度是否存在、给多少、能持续多久，并不是一个稳定可依赖的长期前提。
+
+对于个人练习项目，更稳妥的思路应该是：
+
+- 需要远程且低成本：百炼 `text-embedding-v4`
+- 需要最少折腾：远程 OpenAI embedding
+
+而不是把项目建立在“也许有免费额度”这件事上。
+
+### 27.3.2 使用百炼时，教程主链路会变什么
+
+核心结论是：
+
+> RAG 主链路几乎不变，只是“embedding 服务提供方”从 OpenAI 官方切换成了百炼。
+
+也就是说：
+
+- 文件上传逻辑不变
+- 解析逻辑不变
+- 切片逻辑不变
+- `document_chunks` 的结构不变
+- Atlas 向量检索逻辑不变
+
+真正变化的只有：
+
+- `baseURL`
+- `apiKey`
+- `model`
+- embedding 维度要和百炼模型保持一致
+
+示例：
+
+```ts
+import { OpenAIEmbeddings } from '@langchain/openai';
+
+const embeddings = new OpenAIEmbeddings({
+  apiKey: process.env.OPENAI_API_KEY,
+  model: 'text-embedding-v4',
+  configuration: {
+    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  },
+});
+```
+
+### 27.3.3 使用百炼时有一个很重要的维度提醒
+
+百炼官方文档明确提到：
+
+- `text-embedding-v3`
+- `text-embedding-v4`
+
+当前通过 LangChain 框架接口时，默认采用 `1024` 维。
+
+所以如果你走这条方案，本教程中的配置要同步调整：
+
+- `OPENAI_EMBEDDING_MODEL=text-embedding-v4`
+- `OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
+- `OPENAI_EMBEDDING_DIMENSIONS=1024`
+
+不要继续沿用 `1536`，否则 Atlas 向量索引维度会对不上。
+
+### 27.3.4 如果你要走这条最低成本方案，需要额外准备什么
+
+你需要多做 3 件事：
+
+1. 开通阿里云百炼
+2. 获取中国内地部署模式的 API Key
+3. 把 `OPENAI_BASE_URL` 改成百炼的 OpenAI 兼容地址
+
+如果你想保持本教程现有代码结构不变，还可以直接这样理解：
+
+- `OPENAI_API_KEY` 这个变量名可以继续保留
+- 但它的值改成“阿里云百炼 API Key”
+
+也就是说，当前教程代码里的 `OpenAIEmbeddings` 仍然可以继续用，只是底层请求会转到百炼的 OpenAI 兼容接口。
+
+### 27.3.5 我对个人练习项目的最终建议
+
+如果你问我“最省钱、最适合个人练习”的组合，我会建议你这样分阶段：
+
+#### 第一阶段：先把 embedding 切到百炼
+
+- chat 模型先保持教程主线的远程方案
+- embedding 换成百炼 `text-embedding-v4`
+
+这样做的好处是：
+
+- 改动最小
+- 远程方案里成本几乎压到最低
+- 你仍然可以专注学习 RAG 核心链路
+
+#### 第二阶段：如果你还想继续降到接近 0 成本
+
+再考虑把聊天模型也切到更便宜的远程服务，或者未来条件允许时再回到本地部署。
+
+但这已经超出了“先把知识库检索主链路跑通”的第一优先级。
+
+所以对于这份教程，我给你的推荐落点是：
+
+> 如果本地无法部署模型，个人练习时优先把 embedding 改成阿里云百炼 `text-embedding-v4`；它有 OpenAI 兼容接口、免费额度明确、后续价格也非常低，非常适合这份教程的主线。
 
 ### 27.4 在 Atlas UI 里创建向量索引
 
