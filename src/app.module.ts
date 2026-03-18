@@ -27,6 +27,11 @@ import { KnowledgeBasesModule } from './knowledge_bases/knowledge_bases.module';
         uri:
           configService.get<string>('MONGODB_URI') ||
           'mongodb://localhost:27017/knowledge-base-api',
+        serverApi: {
+          version: '1',
+          strict: true,
+          deprecationErrors: true,
+        },
         connectionFactory: (connection) => {
           connection.plugin(mongooseSerializePlugin);
           return connection;
@@ -36,14 +41,18 @@ import { KnowledgeBasesModule } from './knowledge_bases/knowledge_bases.module';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => {
+        const accessTokenSecret =
+          configService.get<string>('JWT_ACCESS_SECRET') ??
+          'knowledge-base-api-access';
+        const accessTokenExpiresIn =
+          configService.get<JwtSignOptions['expiresIn']>(
+            'JWT_ACCESS_EXPIRESIN',
+          ) ?? '15m';
+
         return {
-          secret:
-            configService.get<string>('JWT_SECRET') || 'knowledge-base-api',
+          secret: accessTokenSecret,
           signOptions: {
-            expiresIn:
-              configService.get<JwtSignOptions['expiresIn']>(
-                'JWT_SECRET_EXPIRESIN',
-              ) || '7d',
+            expiresIn: accessTokenExpiresIn,
           },
         };
       },

@@ -51,7 +51,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       } else if (errorName === 'JsonWebTokenError') {
         if (errorMessage.includes('invalid signature')) {
           friendlyMessage =
-            'Token 签名无效，可能是 JWT_SECRET 配置不一致或 Token 被篡改';
+            'Token 签名无效，可能是 JWT access secret 配置不一致或 Token 被篡改';
         } else if (errorMessage.includes('jwt malformed')) {
           friendlyMessage = 'Token 格式错误，请检查 Authorization 头部格式';
         }

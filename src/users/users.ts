@@ -1,3 +1,17 @@
+export type BaseJwtTokenPayload = {
+  userId: string;
+  email: string;
+};
+
+export type AccessTokenPayload = BaseJwtTokenPayload & {
+  tokenType: 'access';
+};
+
+export type RefreshTokenPayload = BaseJwtTokenPayload & {
+  tokenType: 'refresh';
+  jti: string;
+};
+
 export type UserProfile = {
   id: string;
   email: string;
@@ -15,11 +29,7 @@ export type LogoutResult = {
   success: boolean;
 };
 
-export type JwtTokenPayload = {
-  userId: string;
-  email: string;
-  tokenType: 'access' | 'refresh';
-};
+export type JwtTokenPayload = AccessTokenPayload | RefreshTokenPayload;
 
 export type AuthenticatedUser = {
   userId: string;
@@ -38,9 +48,26 @@ export const isJwtTokenPayload = (value: unknown): value is JwtTokenPayload => {
 
   const candidate = value as Record<string, unknown>;
 
+  if (
+    typeof candidate.userId !== 'string' ||
+    typeof candidate.email !== 'string'
+  ) {
+    return false;
+  }
+
+  if (candidate.tokenType === 'access') {
+    return true;
+  }
+
   return (
-    typeof candidate.userId === 'string' &&
-    typeof candidate.email === 'string' &&
-    (candidate.tokenType === 'access' || candidate.tokenType === 'refresh')
+    candidate.tokenType === 'refresh' &&
+    typeof candidate.jti === 'string' &&
+    candidate.jti.length > 0
   );
+};
+
+export const isRefreshTokenPayload = (
+  value: unknown,
+): value is RefreshTokenPayload => {
+  return isJwtTokenPayload(value) && value.tokenType === 'refresh';
 };

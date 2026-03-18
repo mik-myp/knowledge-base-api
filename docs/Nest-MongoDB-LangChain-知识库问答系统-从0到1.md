@@ -723,6 +723,66 @@ src
 - 需要索引的地方用 `SchemaFactory.createForClass(...)` 之后显式 `index(...)`
 - `mongooseSerializePlugin` 在 `src/app.module.ts` 里通过 `connectionFactory` 全局挂载，所以 schema 文件里不再重复 `schema.plugin(...)`
 
+### 16.0.1 先把集合之间的关系看清楚
+
+虽然 MongoDB 没有关系型数据库那种真正的外键约束，但这个项目的 6 张核心集合之间，仍然存在非常明确的“归属关系”。
+
+你可以先把它理解成下面这张关系图：
+
+```text
+users
+  └─ knowledge_bases
+       └─ documents
+            └─ document_chunks
+
+users
+  └─ chat_sessions
+       └─ chat_messages
+
+knowledge_bases
+  ├─ documents
+  ├─ document_chunks
+  ├─ chat_sessions
+  └─ chat_messages
+```
+
+如果改成更接近关系型数据库的说法，就是：
+
+| 主集合 | 从集合 | 关系 | 说明 |
+| ------ | ------ | ---- | ---- |
+| `users` | `knowledge_bases` | 1 对多 | 一个用户可以拥有多个知识库，一个知识库只属于一个用户 |
+| `knowledge_bases` | `documents` | 1 对多 | 一个知识库下可以上传多份文档，一个文档只属于一个知识库 |
+| `documents` | `document_chunks` | 1 对多 | 一份文档会被切成多个 chunk，一个 chunk 只来自一份文档 |
+| `users` | `documents` | 1 对多 | 文档冗余保存 `userId`，方便按用户过滤和做权限校验 |
+| `users` | `document_chunks` | 1 对多 | chunk 冗余保存 `userId`，方便向量检索时做用户隔离 |
+| `knowledge_bases` | `document_chunks` | 1 对多 | chunk 冗余保存 `knowledgeBaseId`，方便按知识库过滤 |
+| `users` | `chat_sessions` | 1 对多 | 一个用户可以在多个知识库里产生多个会话 |
+| `knowledge_bases` | `chat_sessions` | 1 对多 | 一个知识库下可以有多个聊天会话 |
+| `chat_sessions` | `chat_messages` | 1 对多 | 一个会话里会有多轮问答消息 |
+| `users` | `chat_messages` | 1 对多 | 聊天消息冗余保存 `userId`，方便权限校验与查询 |
+| `knowledge_bases` | `chat_messages` | 1 对多 | 聊天消息冗余保存 `knowledgeBaseId`，方便按知识库筛选 |
+
+这里要特别注意两点：
+
+- `documents` 和 `document_chunks` 里同时保存 `userId`、`knowledgeBaseId`，不是“设计重复了”，而是为了减少跨集合查询，尤其是检索和权限判断时更高效
+- `chat_messages.citations` 里虽然保存了 `documentId`、`chunkId`，但它更像“回答生成当时的引用快照”，不是严格依赖外键实时反查
+
+所以这套数据模型不是单纯的链式关系，而是：
+
+- 主归属链：`user -> knowledgeBase -> document -> chunk`
+- 查询加速字段：`document`、`chunk`、`chat_message` 中冗余保存上层归属 ID
+- 历史快照字段：`chat_messages.citations` 保存生成回答时的引用信息，避免后续文档变化影响历史对话展示
+
+### 16.0.2 这些关系由谁来保证
+
+MongoDB 不会像 MySQL/PostgreSQL 那样帮你自动维护外键，所以这些关系主要靠三层保证：
+
+- schema 层：字段类型统一是 `ObjectId`
+- service 层：写入前检查“这个知识库/文档是否属于当前用户”
+- 删除流程：显式做级联删除，而不是指望数据库自动处理
+
+也就是说，本项目的“关系完整性”更多是业务层约束，而不是数据库硬约束。
+
 也就是说，下面这些代码块不是“泛泛而谈的概念示意”，而是你后面真正实现时几乎可以直接复制的版本。
 
 但请注意：
@@ -1838,15 +1898,22 @@ import { JwtStrategy } from './common/utils/jwt.strategy';
     }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET') || 'knowledge-base-api',
-        signOptions: {
-          expiresIn:
-            configService.get<JwtSignOptions['expiresIn']>(
-              'JWT_SECRET_EXPIRESIN',
-            ) || '7d',
-        },
-      }),
+      useFactory: async (configService: ConfigService) => {
+        const accessTokenSecret =
+          configService.get<string>('JWT_ACCESS_SECRET') ??
+          'knowledge-base-api-access';
+        const accessTokenExpiresIn =
+          configService.get<JwtSignOptions['expiresIn']>(
+            'JWT_ACCESS_EXPIRESIN',
+          ) ?? '15m';
+
+        return {
+          secret: accessTokenSecret,
+          signOptions: {
+            expiresIn: accessTokenExpiresIn,
+          },
+        };
+      },
       inject: [ConfigService],
       global: true,
     }),
@@ -2718,9 +2785,10 @@ MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.xxxxx.mongodb.net/?retr
 MONGODB_DB_NAME=knowledge_base_app
 MONGODB_VECTOR_INDEX_NAME=kb_chunk_vector_index
 
-JWT_SECRET=replace-with-a-very-long-random-string
-JWT_SECRET_EXPIRESIN=7d
-JWT_SECRET_REFRESH_EXPIRESIN=30d
+JWT_ACCESS_SECRET=replace-with-a-very-long-random-string
+JWT_ACCESS_EXPIRESIN=15m
+JWT_REFRESH_SECRET=replace-with-another-very-long-random-string
+JWT_REFRESH_EXPIRESIN=30d
 BCRYPT_SALT_ROUNDS=10
 
 R2_ACCOUNT_ID=your-cloudflare-account-id
@@ -2749,9 +2817,10 @@ UPLOAD_MAX_FILE_SIZE_MB=10
 | `MONGODB_URI`                  | Atlas 连接串                                  |
 | `MONGODB_DB_NAME`              | 业务数据库名                                  |
 | `MONGODB_VECTOR_INDEX_NAME`    | 你在 Atlas UI 里创建的向量索引名称            |
-| `JWT_SECRET`                   | accessToken 和 refreshToken 共用的签名密钥    |
-| `JWT_SECRET_EXPIRESIN`         | accessToken 默认有效期                        |
-| `JWT_SECRET_REFRESH_EXPIRESIN` | refreshToken 默认有效期                       |
+| `JWT_ACCESS_SECRET`            | accessToken 的签名密钥                        |
+| `JWT_ACCESS_EXPIRESIN`         | accessToken 默认有效期                        |
+| `JWT_REFRESH_SECRET`           | refreshToken 的签名密钥                       |
+| `JWT_REFRESH_EXPIRESIN`        | refreshToken 默认有效期                       |
 | `R2_ACCOUNT_ID`                | Cloudflare 账户 ID                            |
 | `R2_ACCESS_KEY_ID`             | R2 访问 key                                   |
 | `R2_SECRET_ACCESS_KEY`         | R2 密钥                                       |
@@ -3189,9 +3258,10 @@ export const envValidationSchema = Joi.object({
   MONGODB_DB_NAME: Joi.string().required(),
   MONGODB_VECTOR_INDEX_NAME: Joi.string().required(),
 
-  JWT_SECRET: Joi.string().required(),
-  JWT_SECRET_EXPIRESIN: Joi.string().default('7d'),
-  JWT_SECRET_REFRESH_EXPIRESIN: Joi.string().default('30d'),
+  JWT_ACCESS_SECRET: Joi.string().required(),
+  JWT_ACCESS_EXPIRESIN: Joi.string().default('15m'),
+  JWT_REFRESH_SECRET: Joi.string().required(),
+  JWT_REFRESH_EXPIRESIN: Joi.string().default('30d'),
   BCRYPT_SALT_ROUNDS: Joi.number().default(10),
 
   R2_ACCOUNT_ID: Joi.string().required(),
@@ -3217,8 +3287,8 @@ export const envValidationSchema = Joi.object({
 ### 22.4 创建分领域配置文件
 
 如果你走的是当前这条“个人练习简化版”主线，其实可以不再额外拆 `auth.config.ts`，
-直接先用 `ConfigService.get('JWT_SECRET')`、`ConfigService.get('JWT_SECRET_EXPIRESIN')` 和
-`ConfigService.get('JWT_SECRET_REFRESH_EXPIRESIN')` 就够了。
+直接先用 `ConfigService.get('JWT_ACCESS_SECRET')`、`ConfigService.get('JWT_ACCESS_EXPIRESIN')`、
+`ConfigService.get('JWT_REFRESH_SECRET')` 和 `ConfigService.get('JWT_REFRESH_EXPIRESIN')` 就够了。
 
 如果你仍然想保留分领域配置文件，也可以简化成下面这样：
 
@@ -3226,9 +3296,10 @@ export const envValidationSchema = Joi.object({
 import { registerAs } from '@nestjs/config';
 
 export default registerAs('auth', () => ({
-  jwtSecret: process.env.JWT_SECRET!,
-  accessExpiresIn: process.env.JWT_SECRET_EXPIRESIN ?? '7d',
-  refreshExpiresIn: process.env.JWT_SECRET_REFRESH_EXPIRESIN ?? '30d',
+  accessSecret: process.env.JWT_ACCESS_SECRET!,
+  accessExpiresIn: process.env.JWT_ACCESS_EXPIRESIN ?? '15m',
+  refreshSecret: process.env.JWT_REFRESH_SECRET!,
+  refreshExpiresIn: process.env.JWT_REFRESH_EXPIRESIN ?? '30d',
   bcryptSaltRounds: Number(process.env.BCRYPT_SALT_ROUNDS ?? 10),
 }));
 ```
@@ -3517,8 +3588,9 @@ export enum DocumentStatus {
 - 对外认证路由统一为 `/users/*`
 - `refreshToken` 字段继续放在 `users` 集合里
 - `users.refreshToken` 字段名不改，但保存的是 **bcrypt 哈希**，不是明文
-- `accessToken` 和 `refreshToken` 共用同一个 `JWT_SECRET`
-- `JWT_SECRET_EXPIRESIN` 是 `JwtModule.registerAsync` 的全局默认过期时间，当前主线里它就是 accessToken 的有效期
+- `accessToken` 使用 `JWT_ACCESS_SECRET`
+- `refreshToken` 使用 `JWT_REFRESH_SECRET`
+- `JWT_ACCESS_EXPIRESIN` 是 `JwtModule.registerAsync` 的全局默认过期时间，当前主线里它就是 accessToken 的有效期
 - `JWT_SECRET_REFRESH_EXPIRESIN` 只在签发 refreshToken 时单独覆盖 `expiresIn`
 - 当前实现不会强制把 email 转成小写，而是按用户输入原样保存和查询
 - 当前 `register` 逻辑除了检查 email，也会顺手检查 `username` 是否重复；但数据库的硬约束只有 `users.email` 唯一索引
@@ -3759,11 +3831,13 @@ private async issueTokenPair(
         userId: user.id,
         email: user.email,
         tokenType: 'refresh',
+        jti: randomUUID(),
       },
       {
+        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
         expiresIn:
           this.configService.get<JwtSignOptions['expiresIn']>(
-            'JWT_SECRET_REFRESH_EXPIRESIN',
+            'JWT_REFRESH_EXPIRESIN',
           ) ?? '30d',
       },
     ),
