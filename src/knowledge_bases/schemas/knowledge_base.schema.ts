@@ -49,6 +49,14 @@ export class KnowledgeBase {
   chunkCount: number;
 
   @Prop({
+    type: Number,
+    default: 0,
+    min: 0,
+    required: true,
+  })
+  sessionCount: number;
+
+  @Prop({
     type: Date,
   })
   lastIndexedAt?: Date;

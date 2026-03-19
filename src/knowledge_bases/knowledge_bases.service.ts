@@ -10,22 +10,21 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import type {
   KnowledgeBaseListResult,
-  KnowledgeBaseDocumentListResult,
   KnowledgeBaseRecord,
 } from './knowledge_bases';
-import {
-  KnowledgeDocument,
-  KnowledgeDocumentDocument,
-} from '../documents/schemas/document.schema';
 
 @Injectable()
 export class KnowledgeBasesService {
   constructor(
     @InjectModel(KnowledgeBase.name)
     private readonly knowledgeBaseModel: Model<KnowledgeBaseDocument>,
-    @InjectModel(KnowledgeDocument.name)
-    private readonly knowledgeDocumentModel: Model<KnowledgeDocumentDocument>,
   ) {}
+
+  private serializeKnowledgeBase(
+    knowledgeBase: KnowledgeBaseDocument,
+  ): KnowledgeBaseRecord {
+    return knowledgeBase.toObject() as unknown as KnowledgeBaseRecord;
+  }
 
   async create(
     userId: string,
@@ -35,12 +34,13 @@ export class KnowledgeBasesService {
       userId,
       documentCount: 0,
       chunkCount: 0,
+      sessionCount: 0,
       ...createKnowledgeBaseDto,
     });
 
     await newKnowledgeBase.save();
 
-    return newKnowledgeBase.toObject();
+    return this.serializeKnowledgeBase(newKnowledgeBase);
   }
 
   async findAll(
@@ -59,28 +59,9 @@ export class KnowledgeBasesService {
     ]);
 
     return {
-      dataList: knowledgeBases.map((knowledgeBase) => knowledgeBase.toObject()),
-      total,
-    };
-  }
-
-  async findAllDocuments(
-    userId: string,
-    query: ListKnowledgeBasesQueryDto,
-  ): Promise<KnowledgeBaseDocumentListResult> {
-    const { page = 1, pageSize = 10 } = query;
-    const [documents, total] = await Promise.all([
-      this.knowledgeDocumentModel
-        .find({ userId })
-        .sort({ updatedAt: -1 })
-        .skip((page - 1) * pageSize)
-        .limit(pageSize)
-        .exec(),
-      this.knowledgeDocumentModel.countDocuments({ userId }).exec(),
-    ]);
-
-    return {
-      dataList: documents.map((document) => document.toObject()),
+      dataList: knowledgeBases.map((knowledgeBase) =>
+        this.serializeKnowledgeBase(knowledgeBase),
+      ),
       total,
     };
   }
@@ -94,7 +75,7 @@ export class KnowledgeBasesService {
       throw new NotFoundException('知识库不存在');
     }
 
-    return knowledgeBase;
+    return this.serializeKnowledgeBase(knowledgeBase);
   }
 
   async update(
@@ -113,7 +94,7 @@ export class KnowledgeBasesService {
       throw new NotFoundException('知识库不存在');
     }
 
-    return knowledgeBase;
+    return this.serializeKnowledgeBase(knowledgeBase);
   }
 
   async remove(userId: string, id: string): Promise<KnowledgeBaseRecord> {
@@ -125,6 +106,6 @@ export class KnowledgeBasesService {
       throw new NotFoundException('知识库不存在');
     }
 
-    return knowledgeBase;
+    return this.serializeKnowledgeBase(knowledgeBase);
   }
 }

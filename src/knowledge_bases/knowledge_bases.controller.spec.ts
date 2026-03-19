@@ -7,7 +7,6 @@ describe('KnowledgeBasesController', () => {
   const knowledgeBasesService = {
     create: jest.fn(),
     findAll: jest.fn(),
-    findAllDocuments: jest.fn(),
     findOne: jest.fn(),
     update: jest.fn(),
     remove: jest.fn(),
