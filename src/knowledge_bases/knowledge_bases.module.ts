@@ -6,6 +6,10 @@ import {
   KnowledgeBase,
   KnowledgeBaseSchema,
 } from './schemas/knowledge_base.schema';
+import {
+  KnowledgeDocument,
+  KnowledgeDocumentSchema,
+} from '../documents/schemas/document.schema';
 
 @Module({
   imports: [
@@ -13,6 +17,10 @@ import {
       {
         name: KnowledgeBase.name,
         schema: KnowledgeBaseSchema,
+      },
+      {
+        name: KnowledgeDocument.name,
+        schema: KnowledgeDocumentSchema,
       },
     ]),
   ],

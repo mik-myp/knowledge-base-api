@@ -526,13 +526,14 @@ flowchart LR
 
 ### 14.2 知识库接口
 
-| 方法   | 路径                   | 说明           | 是否鉴权 |
-| ------ | ---------------------- | -------------- | -------- |
-| POST   | `/knowledge-bases`     | 创建知识库     | 是       |
-| GET    | `/knowledge-bases`     | 获取知识库列表 | 是       |
-| GET    | `/knowledge-bases/:id` | 获取知识库详情 | 是       |
-| PATCH  | `/knowledge-bases/:id` | 修改知识库     | 是       |
-| DELETE | `/knowledge-bases/:id` | 删除知识库     | 是       |
+| 方法   | 路径                         | 说明                               | 是否鉴权 |
+| ------ | ---------------------------- | ---------------------------------- | -------- |
+| POST   | `/knowledge-bases`           | 创建知识库                         | 是       |
+| GET    | `/knowledge-bases`           | 获取知识库列表                     | 是       |
+| GET    | `/knowledge-bases/documents` | 获取当前用户所有知识库下的文档列表 | 是       |
+| GET    | `/knowledge-bases/:id`       | 获取知识库详情                     | 是       |
+| PATCH  | `/knowledge-bases/:id`       | 修改知识库                         | 是       |
+| DELETE | `/knowledge-bases/:id`       | 删除知识库                         | 是       |
 
 ### 14.3 文档接口
 
@@ -748,19 +749,19 @@ knowledge_bases
 
 如果改成更接近关系型数据库的说法，就是：
 
-| 主集合 | 从集合 | 关系 | 说明 |
-| ------ | ------ | ---- | ---- |
-| `users` | `knowledge_bases` | 1 对多 | 一个用户可以拥有多个知识库，一个知识库只属于一个用户 |
-| `knowledge_bases` | `documents` | 1 对多 | 一个知识库下可以上传多份文档，一个文档只属于一个知识库 |
-| `documents` | `document_chunks` | 1 对多 | 一份文档会被切成多个 chunk，一个 chunk 只来自一份文档 |
-| `users` | `documents` | 1 对多 | 文档冗余保存 `userId`，方便按用户过滤和做权限校验 |
-| `users` | `document_chunks` | 1 对多 | chunk 冗余保存 `userId`，方便向量检索时做用户隔离 |
-| `knowledge_bases` | `document_chunks` | 1 对多 | chunk 冗余保存 `knowledgeBaseId`，方便按知识库过滤 |
-| `users` | `chat_sessions` | 1 对多 | 一个用户可以在多个知识库里产生多个会话 |
-| `knowledge_bases` | `chat_sessions` | 1 对多 | 一个知识库下可以有多个聊天会话 |
-| `chat_sessions` | `chat_messages` | 1 对多 | 一个会话里会有多轮问答消息 |
-| `users` | `chat_messages` | 1 对多 | 聊天消息冗余保存 `userId`，方便权限校验与查询 |
-| `knowledge_bases` | `chat_messages` | 1 对多 | 聊天消息冗余保存 `knowledgeBaseId`，方便按知识库筛选 |
+| 主集合            | 从集合            | 关系   | 说明                                                   |
+| ----------------- | ----------------- | ------ | ------------------------------------------------------ |
+| `users`           | `knowledge_bases` | 1 对多 | 一个用户可以拥有多个知识库，一个知识库只属于一个用户   |
+| `knowledge_bases` | `documents`       | 1 对多 | 一个知识库下可以上传多份文档，一个文档只属于一个知识库 |
+| `documents`       | `document_chunks` | 1 对多 | 一份文档会被切成多个 chunk，一个 chunk 只来自一份文档  |
+| `users`           | `documents`       | 1 对多 | 文档冗余保存 `userId`，方便按用户过滤和做权限校验      |
+| `users`           | `document_chunks` | 1 对多 | chunk 冗余保存 `userId`，方便向量检索时做用户隔离      |
+| `knowledge_bases` | `document_chunks` | 1 对多 | chunk 冗余保存 `knowledgeBaseId`，方便按知识库过滤     |
+| `users`           | `chat_sessions`   | 1 对多 | 一个用户可以在多个知识库里产生多个会话                 |
+| `knowledge_bases` | `chat_sessions`   | 1 对多 | 一个知识库下可以有多个聊天会话                         |
+| `chat_sessions`   | `chat_messages`   | 1 对多 | 一个会话里会有多轮问答消息                             |
+| `users`           | `chat_messages`   | 1 对多 | 聊天消息冗余保存 `userId`，方便权限校验与查询          |
+| `knowledge_bases` | `chat_messages`   | 1 对多 | 聊天消息冗余保存 `knowledgeBaseId`，方便按知识库筛选   |
 
 这里要特别注意两点：
 
@@ -2106,6 +2107,7 @@ export class RefreshTokenDto {
 - `CreateKnowledgeBaseDto` -> `POST /knowledge-bases`
 - `UpdateKnowledgeBaseDto` -> `PATCH /knowledge-bases/:id`
 - `ListKnowledgeBasesQueryDto` -> `GET /knowledge-bases`
+- `ListKnowledgeBasesQueryDto` -> `GET /knowledge-bases/documents`
 
 #### 文件：`src/knowledge-bases/dto/create-knowledge-base.dto.ts`
 
@@ -2203,6 +2205,20 @@ export class ListKnowledgeBasesQueryDto {
 ```http
 GET /knowledge-bases?page=1&pageSize=10
 ```
+
+列表接口返回时，统一放在响应体的 `data` 字段里，结构如下：
+
+```json
+{
+  "dataList": [],
+  "total": 0
+}
+```
+
+- `dataList`：当前页查询出来的数据数组
+- `total`：当前用户在数据库中的总数量
+- `GET /knowledge-bases` 返回的是知识库列表
+- `GET /knowledge-bases/documents` 返回的是当前用户所有知识库下的文档列表
 
 ### 17.4 文档模块 DTO
 
@@ -2830,24 +2846,24 @@ OLLAMA_EMBEDDING_MODEL=nomic-embed-text-v2-moe
 
 ### 18.1 每个变量的意思
 
-| 变量                           | 说明                                          |
-| ------------------------------ | --------------------------------------------- |
-| `MONGODB_URI`                  | Atlas 连接串                                  |
-| `MONGODB_DB_NAME`              | 业务数据库名                                  |
-| `MONGODB_VECTOR_INDEX_NAME`    | 你在 Atlas UI 里创建的向量索引名称            |
-| `JWT_ACCESS_SECRET`            | accessToken 的签名密钥                        |
-| `JWT_ACCESS_EXPIRESIN`         | accessToken 默认有效期                        |
-| `JWT_REFRESH_SECRET`           | refreshToken 的签名密钥                       |
-| `JWT_REFRESH_EXPIRESIN`        | refreshToken 默认有效期                       |
-| `R2_ACCOUNT_ID`                | Cloudflare 账户 ID                            |
-| `R2_ACCESS_KEY_ID`             | R2 访问 key                                   |
-| `R2_SECRET_ACCESS_KEY`         | R2 密钥                                       |
-| `R2_BUCKET_NAME`               | 存原始文件的 bucket                           |
-| `OPENAI_BASE_URL`              | OpenAI 兼容接口地址                           |
-| `OPENAI_CHAT_MODEL`            | 问答模型                                      |
-| `OPENAI_EMBEDDING_MODEL`       | Embedding 模型                                |
-| `OPENAI_EMBEDDING_DIMENSIONS`  | 向量维度，必须跟索引一致                      |
-| `OPENAI_STREAM_USAGE`          | 某些兼容平台不支持 `stream_options`，需要关掉 |
+| 变量                          | 说明                                          |
+| ----------------------------- | --------------------------------------------- |
+| `MONGODB_URI`                 | Atlas 连接串                                  |
+| `MONGODB_DB_NAME`             | 业务数据库名                                  |
+| `MONGODB_VECTOR_INDEX_NAME`   | 你在 Atlas UI 里创建的向量索引名称            |
+| `JWT_ACCESS_SECRET`           | accessToken 的签名密钥                        |
+| `JWT_ACCESS_EXPIRESIN`        | accessToken 默认有效期                        |
+| `JWT_REFRESH_SECRET`          | refreshToken 的签名密钥                       |
+| `JWT_REFRESH_EXPIRESIN`       | refreshToken 默认有效期                       |
+| `R2_ACCOUNT_ID`               | Cloudflare 账户 ID                            |
+| `R2_ACCESS_KEY_ID`            | R2 访问 key                                   |
+| `R2_SECRET_ACCESS_KEY`        | R2 密钥                                       |
+| `R2_BUCKET_NAME`              | 存原始文件的 bucket                           |
+| `OPENAI_BASE_URL`             | OpenAI 兼容接口地址                           |
+| `OPENAI_CHAT_MODEL`           | 问答模型                                      |
+| `OPENAI_EMBEDDING_MODEL`      | Embedding 模型                                |
+| `OPENAI_EMBEDDING_DIMENSIONS` | 向量维度，必须跟索引一致                      |
+| `OPENAI_STREAM_USAGE`         | 某些兼容平台不支持 `stream_options`，需要关掉 |
 
 ---
 
@@ -4040,6 +4056,7 @@ curl -X POST http://localhost:3000/users/logout \
 
 - `create`
 - `findAllByUser`
+- `findAllDocuments`
 - `findOneById`
 - `update`
 - `remove`
@@ -4048,6 +4065,7 @@ curl -X POST http://localhost:3000/users/logout \
 
 - `POST /knowledge-bases`
 - `GET /knowledge-bases`
+- `GET /knowledge-bases/documents`
 - `GET /knowledge-bases/:id`
 - `PATCH /knowledge-bases/:id`
 - `DELETE /knowledge-bases/:id`
@@ -4114,13 +4132,13 @@ curl -X POST http://localhost:3000/users/logout \
 一个 chunk 在本项目里，至少要同时承担 3 个角色：
 
 1. 检索单元  
-模型不会直接在整份文档里找答案，而是在多个 chunk 中找最相关的片段。
+   模型不会直接在整份文档里找答案，而是在多个 chunk 中找最相关的片段。
 
 2. 权限过滤单元  
-chunk 上必须带 `userId`、`knowledgeBaseId`，这样检索时才能保证用户只查到自己的知识库内容。
+   chunk 上必须带 `userId`、`knowledgeBaseId`，这样检索时才能保证用户只查到自己的知识库内容。
 
 3. 引用来源单元  
-chunk 上还要带 `documentId`、`documentTitle`、`pageNumber`、`chunkIndex`，这样回答返回时才能生成 citation。
+   chunk 上还要带 `documentId`、`documentTitle`、`pageNumber`、`chunkIndex`，这样回答返回时才能生成 citation。
 
 所以 `document_chunks` 不是单纯的“向量表”，而是：
 

@@ -10,14 +10,21 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import type {
   KnowledgeBaseListResult,
+  KnowledgeBaseDocumentListResult,
   KnowledgeBaseRecord,
 } from './knowledge_bases';
+import {
+  KnowledgeDocument,
+  KnowledgeDocumentDocument,
+} from '../documents/schemas/document.schema';
 
 @Injectable()
 export class KnowledgeBasesService {
   constructor(
     @InjectModel(KnowledgeBase.name)
     private readonly knowledgeBaseModel: Model<KnowledgeBaseDocument>,
+    @InjectModel(KnowledgeDocument.name)
+    private readonly knowledgeDocumentModel: Model<KnowledgeDocumentDocument>,
   ) {}
 
   async create(
@@ -41,14 +48,41 @@ export class KnowledgeBasesService {
     query: ListKnowledgeBasesQueryDto,
   ): Promise<KnowledgeBaseListResult> {
     const { page = 1, pageSize = 10 } = query;
-    const knowledgeBases = await this.knowledgeBaseModel
-      .find({ userId })
-      .sort({ updatedAt: -1 })
-      .skip((page - 1) * pageSize)
-      .limit(pageSize)
-      .exec();
+    const [knowledgeBases, total] = await Promise.all([
+      this.knowledgeBaseModel
+        .find({ userId })
+        .sort({ updatedAt: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .exec(),
+      this.knowledgeBaseModel.countDocuments({ userId }).exec(),
+    ]);
 
-    return knowledgeBases;
+    return {
+      dataList: knowledgeBases.map((knowledgeBase) => knowledgeBase.toObject()),
+      total,
+    };
+  }
+
+  async findAllDocuments(
+    userId: string,
+    query: ListKnowledgeBasesQueryDto,
+  ): Promise<KnowledgeBaseDocumentListResult> {
+    const { page = 1, pageSize = 10 } = query;
+    const [documents, total] = await Promise.all([
+      this.knowledgeDocumentModel
+        .find({ userId })
+        .sort({ updatedAt: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .exec(),
+      this.knowledgeDocumentModel.countDocuments({ userId }).exec(),
+    ]);
+
+    return {
+      dataList: documents.map((document) => document.toObject()),
+      total,
+    };
   }
 
   async findOne(userId: string, id: string): Promise<KnowledgeBaseRecord> {

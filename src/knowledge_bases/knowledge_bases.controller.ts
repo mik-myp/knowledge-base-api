@@ -21,14 +21,15 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { ParseObjectIdPipe } from 'src/common/pipes/parse-object-id.pipe';
+import { ParseObjectIdPipe } from '../common/pipes/parse-object-id.pipe';
 import { KnowledgeBasesService } from './knowledge_bases.service';
 import { CreateKnowledgeBaseDto } from './dto/create-knowledge_base.dto';
 import { ListKnowledgeBasesQueryDto } from './dto/list-knowledge-bases-query.dto';
 import { UpdateKnowledgeBaseDto } from './dto/update-knowledge_base.dto';
-import type { UserRequest } from 'src/users/users';
+import type { UserRequest } from '../users/users';
 import type {
   KnowledgeBaseListResult,
+  KnowledgeBaseDocumentListResult,
   KnowledgeBaseRecord,
 } from './knowledge_bases';
 
@@ -74,6 +75,29 @@ export class KnowledgeBasesController {
     @Query() query: ListKnowledgeBasesQueryDto,
   ): Promise<KnowledgeBaseListResult> {
     return this.knowledgeBasesService.findAll(req.user.userId, query);
+  }
+
+  @Get('documents')
+  @ApiOperation({ summary: '获取当前用户所有知识库下的文档列表' })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    description: '页码，从 1 开始。',
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'pageSize',
+    required: false,
+    description: '每页数量，最大 50。',
+    example: 10,
+  })
+  @ApiOkResponse({ description: '文档列表获取成功' })
+  @ApiUnauthorizedResponse({ description: '未提供有效 accessToken' })
+  findAllDocuments(
+    @Request() req: UserRequest,
+    @Query() query: ListKnowledgeBasesQueryDto,
+  ): Promise<KnowledgeBaseDocumentListResult> {
+    return this.knowledgeBasesService.findAllDocuments(req.user.userId, query);
   }
 
   @Get(':id')

@@ -32,6 +32,7 @@ import { KnowledgeBasesModule } from './knowledge_bases/knowledge_bases.module';
           strict: true,
           deprecationErrors: true,
         },
+        dbName: 'knowledge',
         connectionFactory: (connection) => {
           connection.plugin(mongooseSerializePlugin);
           return connection;
