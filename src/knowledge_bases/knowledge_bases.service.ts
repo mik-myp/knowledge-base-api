@@ -46,24 +46,33 @@ export class KnowledgeBasesService {
   async findAll(
     userId: string,
     query: ListKnowledgeBasesQueryDto,
-  ): Promise<KnowledgeBaseListResult> {
-    const { page = 1, pageSize = 10 } = query;
-    const [knowledgeBases, total] = await Promise.all([
-      this.knowledgeBaseModel
-        .find({ userId })
-        .sort({ updatedAt: -1 })
-        .skip((page - 1) * pageSize)
-        .limit(pageSize)
-        .exec(),
-      this.knowledgeBaseModel.countDocuments({ userId }).exec(),
-    ]);
+  ): Promise<KnowledgeBaseListResult | KnowledgeBaseRecord[]> {
+    const { page, pageSize } = query;
+    if (page && pageSize) {
+      const [knowledgeBases, total] = await Promise.all([
+        this.knowledgeBaseModel
+          .find({ userId })
+          .sort({ updatedAt: -1 })
+          .skip((page - 1) * pageSize)
+          .limit(pageSize)
+          .exec(),
+        this.knowledgeBaseModel.countDocuments({ userId }).exec(),
+      ]);
 
-    return {
-      dataList: knowledgeBases.map((knowledgeBase) =>
-        this.serializeKnowledgeBase(knowledgeBase),
-      ),
-      total,
-    };
+      return {
+        dataList: knowledgeBases.map((knowledgeBase) =>
+          this.serializeKnowledgeBase(knowledgeBase),
+        ),
+        total,
+      };
+    }
+
+    const knowledgeBases = this.knowledgeBaseModel
+      .find({ userId })
+      .sort({ updatedAt: -1 })
+      .exec();
+
+    return knowledgeBases;
   }
 
   async findOne(userId: string, id: string): Promise<KnowledgeBaseRecord> {

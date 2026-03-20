@@ -77,7 +77,12 @@ export class KnowledgeBasesController {
   findAll(
     @Request() req: UserRequest,
     @Query() query: ListKnowledgeBasesQueryDto,
-  ): Promise<KnowledgeBaseListResult> {
+  ): Promise<KnowledgeBaseListResult | KnowledgeBaseRecord[]> {
+    console.log(
+      '🚀 ~ knowledge_bases.controller.ts:82 ~ KnowledgeBasesController ~ findAll ~ query:',
+      query,
+    );
+
     return this.knowledgeBasesService.findAll(req.user.userId, query);
   }
 
@@ -124,7 +129,8 @@ export class KnowledgeBasesController {
   @ApiOperation({ summary: '删除当前用户的知识库主记录' })
   @ApiParam({ name: 'id', description: '知识库 ID' })
   @ApiOkResponse({
-    description: '知识库删除成功。文档、会话等下游资源删除策略将在后续模块实现。',
+    description:
+      '知识库删除成功。文档、会话等下游资源删除策略将在后续模块实现。',
   })
   @ApiUnauthorizedResponse({ description: '未提供有效 accessToken' })
   @ApiBadRequestResponse({ description: '知识库 ID 格式错误' })

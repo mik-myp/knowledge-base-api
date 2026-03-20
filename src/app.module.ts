@@ -13,6 +13,7 @@ import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
 import { JwtAuthGuard } from './common/guard/jwt-auth.guard';
 import { UsersModule } from './users/users.module';
 import { KnowledgeBasesModule } from './knowledge_bases/knowledge_bases.module';
+import { DocumnetsModule } from './documnets/documnets.module';
 
 @Module({
   imports: [
@@ -63,6 +64,7 @@ import { KnowledgeBasesModule } from './knowledge_bases/knowledge_bases.module';
     PassportModule,
     UsersModule,
     KnowledgeBasesModule,
+    DocumnetsModule,
   ],
   controllers: [AppController],
   providers: [
