@@ -16,6 +16,7 @@ import {
       },
     ]),
   ],
+
   controllers: [KnowledgeBasesController],
   providers: [KnowledgeBasesService],
 })

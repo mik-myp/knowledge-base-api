@@ -4,16 +4,10 @@ import { HydratedDocument, Types } from 'mongoose';
 export type DocumentDocument = HydratedDocument<Document>;
 
 export enum DocumentStatus {
-  Uploaded = 'uploaded',
-  Parsing = 'parsing',
-  Chunking = 'chunking',
-  Embedding = 'embedding',
+  Pending = 'pending',
+  Processing = 'processing',
   Ready = 'ready',
   Failed = 'failed',
-}
-
-export enum StorageProvider {
-  R2 = 'r2',
 }
 
 @Schema({
@@ -41,13 +35,6 @@ export class Document {
   @Prop({
     required: true,
     trim: true,
-    maxlength: 200,
-  })
-  title: string;
-
-  @Prop({
-    required: true,
-    trim: true,
   })
   originalName: string;
 
@@ -56,7 +43,14 @@ export class Document {
     trim: true,
     lowercase: true,
   })
-  ext: string;
+  extension: string;
+
+  @Prop({
+    type: String,
+    required: true,
+    trim: true,
+  })
+  fileType: string;
 
   @Prop({
     required: true,
@@ -71,51 +65,14 @@ export class Document {
   })
   size: number;
 
-  @Prop({ trim: true })
-  sha256?: string;
-
-  @Prop({
-    type: String,
-    enum: Object.values(StorageProvider),
-    required: true,
-    default: StorageProvider.R2,
-  })
-  storageProvider: StorageProvider;
-
-  @Prop({
-    required: true,
-    trim: true,
-  })
-  bucket: string;
-
-  @Prop({
-    required: true,
-    trim: true,
-  })
-  objectKey: string;
-
   @Prop({
     type: String,
     enum: Object.values(DocumentStatus),
     required: true,
-    default: DocumentStatus.Uploaded,
+    default: DocumentStatus.Pending,
     index: true,
   })
   status: DocumentStatus;
-
-  @Prop({ min: 0 })
-  pageCount?: number;
-
-  @Prop({ min: 0 })
-  chunkCount?: number;
-
-  @Prop({
-    trim: true,
-  })
-  parseErrorMessage?: string;
-
-  @Prop()
-  indexedAt?: Date;
 }
 
 export const DocumentSchema = SchemaFactory.createForClass(Document);

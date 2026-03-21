@@ -1,4 +1,7 @@
-import { PartialType } from '@nestjs/swagger';
-import { CreateDocumnetDto } from './create-documnet.dto';
+import { IsEnum } from 'class-validator';
+import { DocumentStatus } from '../schemas/documnet.schema';
 
-export class UpdateDocumnetDto extends PartialType(CreateDocumnetDto) {}
+export class UpdateDocumnetDto {
+  @IsEnum(DocumentStatus)
+  status: string;
+}

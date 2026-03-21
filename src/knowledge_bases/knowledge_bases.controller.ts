@@ -78,11 +78,6 @@ export class KnowledgeBasesController {
     @Request() req: UserRequest,
     @Query() query: ListKnowledgeBasesQueryDto,
   ): Promise<KnowledgeBaseListResult | KnowledgeBaseRecord[]> {
-    console.log(
-      '🚀 ~ knowledge_bases.controller.ts:82 ~ KnowledgeBasesController ~ findAll ~ query:',
-      query,
-    );
-
     return this.knowledgeBasesService.findAll(req.user.userId, query);
   }
 
