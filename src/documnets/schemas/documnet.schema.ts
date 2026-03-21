@@ -38,6 +38,9 @@ export class Document {
   })
   originalName: string;
 
+  @Prop({ required: true })
+  s3Key: string; // S3 对象键
+
   @Prop({
     required: true,
     trim: true,

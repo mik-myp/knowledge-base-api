@@ -1,3 +1,4 @@
+import { StorageModule } from './storage/storage.module';
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -17,6 +18,7 @@ import { DocumnetsModule } from './documnets/documnets.module';
 
 @Module({
   imports: [
+    StorageModule,
     ConfigModule.forRoot({
       envFilePath: ['.env.local', '.env'],
       isGlobal: true,
