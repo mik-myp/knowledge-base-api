@@ -3,16 +3,18 @@ import {
   Post,
   Body,
   Request,
-  UploadedFile,
   UseInterceptors,
   Get,
   Query,
+  Delete,
+  Param,
+  UploadedFiles,
 } from '@nestjs/common';
 import { DocumnetsService } from './documnets.service';
 
 import type { UserRequest } from 'src/users/users';
 import { UploadDocumentDto } from './dto/upload-document.dto';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { ListDocumentsQueryDto } from './dto/list-documents-query.dto';
 
 @Controller('documnets')
@@ -20,13 +22,13 @@ export class DocumnetsController {
   constructor(private readonly documnetsService: DocumnetsService) {}
 
   @Post('/upload')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FilesInterceptor('files'))
   upload(
     @Request() req: { user: { userId: string } },
-    @UploadedFile() file: Express.Multer.File,
-    @Body() uploadDocument: { knowledgeBaseId: string },
+    @UploadedFiles() files: Array<Express.Multer.File>,
+    @Body() uploadDocument: UploadDocumentDto,
   ) {
-    return this.documnetsService.upload(req.user.userId, file, uploadDocument);
+    return this.documnetsService.upload(req.user.userId, files, uploadDocument);
   }
 
   @Get('all')
@@ -37,19 +39,19 @@ export class DocumnetsController {
     return this.documnetsService.findAllDocuments(req.user.userId, query);
   }
 
-  // @Get('allByKnowledgeId')
-  // findAllDocumentsByKnowledgeId(
-  //   @Request() req: UserRequest,
-  //   @Query()
-  //   query: {
-  //     knowledgeBaseId: string;
-  //   },
-  // ) {
-  //   return this.documnetsService.findAllDocumentsByKnowledgeId(
-  //     req.user.userId,
-  //     query.knowledgeBaseId,
-  //   );
-  // }
+  @Get('allByKnowledgeId')
+  findAllDocumentsByKnowledgeId(
+    @Request() req: UserRequest,
+    @Query()
+    query: {
+      knowledgeBaseId: string;
+    },
+  ) {
+    return this.documnetsService.findAllDocumentsByKnowledgeId(
+      req.user.userId,
+      query.knowledgeBaseId,
+    );
+  }
 
   // @Get(':id')
   // findOne(@Request() req: UserRequest, @Param('id') id: string) {
@@ -65,8 +67,8 @@ export class DocumnetsController {
   //   return this.documnetsService.update(req.user.userId, id, updateDocumnetDto);
   // }
 
-  // @Delete(':id')
-  // remove(@Request() req: UserRequest, @Param('id') id: string) {
-  //   return this.documnetsService.remove(req.user.userId, id);
-  // }
+  @Delete(':id')
+  remove(@Request() req: UserRequest, @Param('id') id: string) {
+    return this.documnetsService.remove(req.user.userId, id);
+  }
 }

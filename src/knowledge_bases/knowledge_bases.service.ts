@@ -12,12 +12,20 @@ import type {
   KnowledgeBaseListResult,
   KnowledgeBaseRecord,
 } from './knowledge_bases';
+import {
+  Document,
+  DocumentDocument,
+} from 'src/documnets/schemas/documnet.schema';
+import { StorageService } from 'src/storage/storage.service';
 
 @Injectable()
 export class KnowledgeBasesService {
   constructor(
     @InjectModel(KnowledgeBase.name)
     private readonly knowledgeBaseModel: Model<KnowledgeBaseDocument>,
+    @InjectModel(Document.name)
+    private readonly documentModel: Model<DocumentDocument>,
+    private readonly storageService: StorageService,
   ) {}
 
   private serializeKnowledgeBase(
@@ -113,6 +121,18 @@ export class KnowledgeBasesService {
 
     if (!knowledgeBase) {
       throw new NotFoundException('知识库不存在');
+    }
+
+    const documents = await this.documentModel
+      .find({ knowledgeBaseId: id, userId })
+      .exec();
+
+    if (documents.length) {
+      await Promise.all(
+        documents.map(async (document) => {
+          await this.storageService.deleteFile(document.s3Key);
+        }),
+      );
     }
 
     return this.serializeKnowledgeBase(knowledgeBase);

@@ -56,6 +56,109 @@ describe('DocumnetsService', () => {
     expect(service).toBeDefined();
   });
 
+  it('uploads multiple files and normalizes mojibake filenames before persisting', async () => {
+    const userId = '507f1f77bcf86cd799439011';
+    const knowledgeBaseId = '507f1f77bcf86cd799439013';
+    const firstOriginalName = '03-当前已实现接口与代码结构.md';
+    const mojibakeOriginalName = Buffer.from(
+      firstOriginalName,
+      'utf8',
+    ).toString('latin1');
+    const secondOriginalName = 'guide.pdf';
+
+    const createdDocuments = [
+      {
+        save: jest.fn().mockResolvedValue(undefined),
+        toObject: jest.fn().mockReturnValue({
+          originalName: firstOriginalName,
+        }),
+      },
+      {
+        save: jest.fn().mockResolvedValue(undefined),
+        toObject: jest.fn().mockReturnValue({
+          originalName: secondOriginalName,
+        }),
+      },
+    ];
+
+    storageService.uploadFile
+      .mockResolvedValueOnce(`folder/${firstOriginalName}`)
+      .mockResolvedValueOnce(`folder/${secondOriginalName}`);
+
+    documentModel
+      .mockImplementationOnce((payload: Record<string, unknown>) => {
+        expect(payload.originalName).toBe(firstOriginalName);
+        expect(payload.extension).toBe('md');
+        expect(payload.fileType).toBe('markdown');
+
+        return createdDocuments[0];
+      })
+      .mockImplementationOnce((payload: Record<string, unknown>) => {
+        expect(payload.originalName).toBe(secondOriginalName);
+        expect(payload.extension).toBe('pdf');
+        expect(payload.fileType).toBe('pdf');
+
+        return createdDocuments[1];
+      });
+
+    const result = await service.upload(
+      userId,
+      [
+        {
+          originalname: mojibakeOriginalName,
+          mimetype: 'text/markdown',
+          size: 5036,
+          buffer: Buffer.from('content-1'),
+        } as Express.Multer.File,
+        {
+          originalname: secondOriginalName,
+          mimetype: 'application/pdf',
+          size: 1024,
+          buffer: Buffer.from('content-2'),
+        } as Express.Multer.File,
+      ],
+      {
+        knowledgeBaseId,
+      },
+    );
+
+    expect(storageService.uploadFile).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        originalname: firstOriginalName,
+      }),
+      `${userId} - ${knowledgeBaseId}`,
+    );
+    expect(storageService.uploadFile).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        originalname: secondOriginalName,
+      }),
+      `${userId} - ${knowledgeBaseId}`,
+    );
+    expect(createdDocuments[0].save).toHaveBeenCalled();
+    expect(createdDocuments[1].save).toHaveBeenCalled();
+    expect(result).toEqual([
+      {
+        originalName: firstOriginalName,
+      },
+      {
+        originalName: secondOriginalName,
+      },
+    ]);
+  });
+
+  it('rejects empty file arrays', async () => {
+    await expect(
+      service.upload('507f1f77bcf86cd799439011', [], {
+        knowledgeBaseId: '507f1f77bcf86cd799439013',
+      }),
+    ).rejects.toThrow('至少上传一个文件');
+
+    expect(storageService.uploadFile).not.toHaveBeenCalled();
+    expect(documentModel).not.toHaveBeenCalled();
+  });
+
   it('returns paginated documents under the current user knowledge bases', async () => {
     const userId = '507f1f77bcf86cd799439011';
     const documentId = '507f1f77bcf86cd799439012';
@@ -67,7 +170,7 @@ describe('DocumnetsService', () => {
       .mockReturnValueOnce({
         exec: jest.fn().mockResolvedValue([
           {
-            _id: documentId,
+            id: documentId,
             userId,
             knowledgeBaseId,
             originalName: 'demo.pdf',
@@ -148,7 +251,7 @@ describe('DocumnetsService', () => {
     expect(result).toEqual({
       dataList: [
         {
-          _id: documentId,
+          id: documentId,
           userId,
           knowledgeBaseId,
           originalName: 'demo.pdf',
@@ -158,8 +261,8 @@ describe('DocumnetsService', () => {
           mimeType: 'application/pdf',
           size: 1024,
           status: DocumentStatus.Ready,
-          createdAt: createdAt.toISOString(),
-          updatedAt: updatedAt.toISOString(),
+          createdAt,
+          updatedAt,
         },
       ],
       total: 1,

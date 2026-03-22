@@ -1,11 +1,62 @@
 import { Schema } from 'mongoose';
 
 type SerializedDocument = Record<string, unknown> & {
-  _id?: { toString(): string } | string;
+  _id?: unknown;
   id?: string;
 };
 
 type TransformMode = 'toJSON' | 'toObject';
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+  return Object.prototype.toString.call(value) === '[object Object]';
+};
+
+const serializeId = (value: unknown): string | undefined => {
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value);
+  }
+
+  if (
+    value &&
+    typeof value === 'object' &&
+    'toHexString' in value &&
+    typeof value.toHexString === 'function'
+  ) {
+    return value.toHexString();
+  }
+
+  return undefined;
+};
+
+export const serializeMongoResult = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map((item) => serializeMongoResult(item));
+  }
+
+  if (!isPlainObject(value)) {
+    return value;
+  }
+
+  const serializedDocument: SerializedDocument = {};
+
+  for (const [key, currentValue] of Object.entries(value)) {
+    if (key === '__v' || key === '_id') {
+      continue;
+    }
+
+    serializedDocument[key] = serializeMongoResult(currentValue);
+  }
+
+  const serializedId = serializeId(value._id);
+
+  if (serializedId !== undefined) {
+    serializedDocument.id = serializedId;
+  } else if (value._id !== undefined) {
+    serializedDocument._id = serializeMongoResult(value._id);
+  }
+
+  return serializedDocument;
+};
 
 const applyIdTransform = (schema: Schema, mode: TransformMode) => {
   const currentOptions = schema.get(mode) ?? {};
@@ -23,17 +74,10 @@ const applyIdTransform = (schema: Schema, mode: TransformMode) => {
           return transformedRet;
         }
 
-        ret = transformedRet as SerializedDocument;
+        return serializeMongoResult(transformedRet);
       }
 
-      if (ret._id !== undefined) {
-        ret.id = typeof ret._id === 'string' ? ret._id : ret._id.toString();
-        delete ret._id;
-      }
-      if (ret.__v !== undefined) {
-        delete ret.__v;
-      }
-      return ret;
+      return serializeMongoResult(ret);
     },
   });
 };
@@ -41,4 +85,13 @@ const applyIdTransform = (schema: Schema, mode: TransformMode) => {
 export const mongooseSerializePlugin = (schema: Schema) => {
   applyIdTransform(schema, 'toJSON');
   applyIdTransform(schema, 'toObject');
+  schema.post('aggregate', function (result: unknown[]) {
+    if (!Array.isArray(result)) {
+      return;
+    }
+
+    for (let index = 0; index < result.length; index += 1) {
+      result[index] = serializeMongoResult(result[index]);
+    }
+  });
 };

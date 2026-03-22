@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 
 import { InjectModel } from '@nestjs/mongoose';
 import { Document, DocumentDocument } from './schemas/documnet.schema';
@@ -29,6 +33,34 @@ export class DocumnetsService {
     private readonly documentModel: Model<DocumentDocument>,
     private readonly storageService: StorageService,
   ) {}
+
+  private countExtendedLatinCharacters(value: string): number {
+    return (value.match(/[\u0080-\u00FF]/g) ?? []).length;
+  }
+
+  private normalizeOriginalName(originalName: string): string {
+    if (!/[\u0080-\u00FF]/.test(originalName)) {
+      return originalName;
+    }
+
+    const decodedName = Buffer.from(originalName, 'latin1').toString('utf8');
+
+    if (decodedName.includes('\uFFFD')) {
+      return originalName;
+    }
+
+    if (
+      // eslint-disable-next-line no-control-regex
+      /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/.test(decodedName)
+    ) {
+      return originalName;
+    }
+
+    return this.countExtendedLatinCharacters(decodedName) <
+      this.countExtendedLatinCharacters(originalName)
+      ? decodedName
+      : originalName;
+  }
 
   private buildFindAllDocumentsPipeline(userId: string): PipelineStage[] {
     return [
@@ -73,22 +105,31 @@ export class DocumnetsService {
     ];
   }
 
-  async upload(
+  private async uploadSingleFile(
     userId: string,
     file: Express.Multer.File,
     uploadDocument: UploadDocumentDto,
   ) {
-    const folder = `${userId} - ${uploadDocument.knowledgeBaseId}`;
-    const s3Key = await this.storageService.uploadFile(file, folder);
+    const normalizedOriginalName = this.normalizeOriginalName(
+      file.originalname,
+    );
+    const normalizedFile: Express.Multer.File = {
+      ...file,
+      originalname: normalizedOriginalName,
+    };
 
-    const extension = file.originalname.split('.').pop() || 'other';
+    const folder = `${userId} - ${uploadDocument.knowledgeBaseId}`;
+    const s3Key = await this.storageService.uploadFile(normalizedFile, folder);
+
+    const extension =
+      normalizedOriginalName.split('.').pop()?.toLowerCase() || 'other';
 
     const newDocument = new this.documentModel({
       userId: userId,
       knowledgeBaseId: uploadDocument.knowledgeBaseId,
       s3Key,
-      originalName: file.originalname,
-      mimeType: file.mimetype,
+      originalName: normalizedOriginalName,
+      mimeType: normalizedFile.mimetype,
       size: file.size,
       extension,
       fileType: FileType[extension] || 'other',
@@ -97,6 +138,20 @@ export class DocumnetsService {
     await newDocument.save();
 
     return newDocument.toObject();
+  }
+
+  async upload(
+    userId: string,
+    files: Array<Express.Multer.File>,
+    uploadDocument: UploadDocumentDto,
+  ) {
+    if (!files?.length) {
+      throw new BadRequestException('至少上传一个文件');
+    }
+
+    return Promise.all(
+      files.map((file) => this.uploadSingleFile(userId, file, uploadDocument)),
+    );
   }
 
   async findAllDocuments(userId: string, query: ListDocumentsQueryDto) {
@@ -140,5 +195,31 @@ export class DocumnetsService {
       dataList,
       total: totalResult[0]?.total ?? 0,
     };
+  }
+
+  async findAllDocumentsByKnowledgeId(userId: string, knowledgeBaseId: string) {
+    const documents = await this.documentModel
+      .find({
+        userId,
+        knowledgeBaseId,
+      })
+      .exec();
+
+    return documents;
+  }
+
+  async remove(userId: string, id: string) {
+    const document = await this.documentModel
+      .findOneAndDelete({
+        _id: id,
+        userId,
+      })
+      .exec();
+    if (!document) {
+      throw new NotFoundException('文档不存在');
+    }
+    await this.storageService.deleteFile(document.s3Key);
+
+    return document.toObject();
   }
 }
