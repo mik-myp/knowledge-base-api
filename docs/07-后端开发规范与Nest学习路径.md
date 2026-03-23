@@ -162,6 +162,7 @@ src/
 
 - service 内部结构、payload、返回对象放在 `*.ts` 类型文件里
 - 不要把内部类型和 DTO 混在一起
+- 如果后续对接 LangChain，优先在类型层完成字段映射，不要把第三方对象直接原样泄漏到 controller 或数据库层
 
 ### 4.3 Service 规范
 
@@ -210,14 +211,14 @@ src/
 
 ### 5.2 汇总字段规范
 
-知识库级汇总字段当前统一包括：
+知识库级汇总字段属于可选缓存，常见字段包括：
 
 - `documentCount`
 - `chunkCount`
 - `sessionCount`
 - `lastIndexedAt`
 
-后续新增模块时，必须明确谁负责维护这些字段。
+当列表页需要直接展示这些统计时，再明确由谁维护这些字段；如果当前页面不依赖，可以暂时不加。
 
 ### 5.3 权限隔离规范
 
@@ -235,6 +236,7 @@ src/
 - 模块目录沿用当前仓库风格，如 `knowledge_bases`
 - TypeScript 类型和类使用大驼峰
 - DTO 类名使用 `XxxDto`
+- 如果消息模型对接 LangChain，消息类型优先使用 `system/human/ai/tool`，不要同时维护一套 `user/assistant/system` 的平行字段
 
 ---
 

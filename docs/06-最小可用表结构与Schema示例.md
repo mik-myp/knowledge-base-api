@@ -211,14 +211,13 @@ MVP 必需字段：
 - `userId`
 - `name`
 - `description`
-- `documentCount`
-- `chunkCount`
-- `sessionCount`
 
 后续可扩展字段：
 
+- `documentCount`
+- `chunkCount`
+- `sessionCount`
 - `lastIndexedAt`
-- `cover`
 
 ### 4.2 表字段说明
 
@@ -228,9 +227,9 @@ MVP 必需字段：
 | `userId` | ObjectId | 是 | 所属用户 |
 | `name` | string | 是 | 知识库名称 |
 | `description` | string | 否 | 知识库描述 |
-| `documentCount` | number | 是 | 文档数量缓存 |
-| `chunkCount` | number | 是 | chunk 数量缓存 |
-| `sessionCount` | number | 是 | 会话数量缓存 |
+| `documentCount` | number | 否 | 文档数量缓存，列表页需要时再加 |
+| `chunkCount` | number | 否 | chunk 数量缓存，列表页需要时再加 |
+| `sessionCount` | number | 否 | 会话数量缓存，列表页需要时再加 |
 | `lastIndexedAt` | Date | 否 | 最近索引完成时间 |
 | `createdAt` | Date | 是 | 创建时间 |
 | `updatedAt` | Date | 是 | 更新时间 |
@@ -276,25 +275,22 @@ export class KnowledgeBase {
     type: Number,
     default: 0,
     min: 0,
-    required: true,
   })
-  documentCount: number;
+  documentCount?: number;
 
   @Prop({
     type: Number,
     default: 0,
     min: 0,
-    required: true,
   })
-  chunkCount: number;
+  chunkCount?: number;
 
   @Prop({
     type: Number,
     default: 0,
     min: 0,
-    required: true,
   })
-  sessionCount: number;
+  sessionCount?: number;
 
   @Prop({
     type: Date,
@@ -353,10 +349,17 @@ export class KnowledgeBasesModule {}
 
 ### 5.1 第一阶段最少需要哪些字段
 
+说明：
+
+- 当前最小闭环先以文件上传为主，因此下面把 `extension`、`mimeType`、`size` 仍列入第一阶段关注字段
+- 后续接入 Markdown 编辑器时，这几个字段可以按业务放宽为可选
+
 MVP 必需字段：
 
 - `userId`
 - `knowledgeBaseId`
+- `sourceType`
+- `contentFormat`
 - `originalName`
 - `extension`
 - `fileType`
@@ -366,11 +369,12 @@ MVP 必需字段：
 
 后续可扩展字段：
 
-- `statusMessage`
 - `chunkCount`
 - `processedAt`
 - `storageKey`
 - `errorMessage`
+- `splitterType`
+- `splitConfig`
 
 ### 5.2 表字段说明
 
@@ -379,17 +383,20 @@ MVP 必需字段：
 | `_id` | ObjectId | 是 | 文档主键 |
 | `userId` | ObjectId | 是 | 所属用户 |
 | `knowledgeBaseId` | ObjectId | 是 | 所属知识库 |
-| `originalName` | string | 是 | 原始文件名 |
-| `extension` | string | 是 | 原始扩展名 |
+| `sourceType` | string | 是 | 文档来源，推荐 `upload/editor` |
+| `contentFormat` | string | 是 | 最终送去切片的内容格式，推荐 `markdown/plain_text` |
+| `originalName` | string | 是 | 文档展示名；编辑器内容也建议统一使用这个字段 |
+| `extension` | string | 否 | 原始扩展名；编辑器内容可为空 |
 | `fileType` | string | 是 | 展示级文件类型 |
-| `mimeType` | string | 是 | MIME 类型 |
-| `size` | number | 是 | 文件大小，单位字节 |
+| `mimeType` | string | 否 | MIME 类型；编辑器内容可为空 |
+| `size` | number | 否 | 文件大小，单位字节；编辑器内容可按字符数或 `0` 落库 |
 | `status` | string | 是 | 文档处理状态 |
-| `statusMessage` | string | 否 | 状态说明 |
 | `chunkCount` | number | 否 | chunk 数量缓存 |
 | `processedAt` | Date | 否 | 处理完成时间 |
 | `storageKey` | string | 否 | 对象存储路径 |
 | `errorMessage` | string | 否 | 错误信息 |
+| `splitterType` | string | 否 | 切片器类型，例如 `recursive_character` |
+| `splitConfig` | object | 否 | 切片配置快照，例如 `chunkSize/chunkOverlap/separators` |
 | `createdAt` | Date | 是 | 创建时间 |
 | `updatedAt` | Date | 是 | 更新时间 |
 
@@ -401,11 +408,26 @@ import { HydratedDocument, Types } from 'mongoose';
 
 export type DocumentDocument = HydratedDocument<Document>;
 
+export enum DocumentSourceType {
+  Upload = 'upload',
+  Editor = 'editor',
+}
+
+export enum DocumentContentFormat {
+  Markdown = 'markdown',
+  PlainText = 'plain_text',
+}
+
 export enum DocumentStatus {
   Pending = 'pending',
   Processing = 'processing',
   Ready = 'ready',
   Failed = 'failed',
+}
+
+export enum DocumentSplitterType {
+  RecursiveCharacter = 'recursive_character',
+  Token = 'token',
 }
 
 @Schema({
@@ -432,6 +454,22 @@ export class Document {
 
   @Prop({
     type: String,
+    enum: Object.values(DocumentSourceType),
+    required: true,
+    trim: true,
+  })
+  sourceType: DocumentSourceType;
+
+  @Prop({
+    type: String,
+    enum: Object.values(DocumentContentFormat),
+    required: true,
+    trim: true,
+  })
+  contentFormat: DocumentContentFormat;
+
+  @Prop({
+    type: String,
     required: true,
     trim: true,
   })
@@ -439,10 +477,10 @@ export class Document {
 
   @Prop({
     type: String,
-    required: true,
     trim: true,
+    default: undefined,
   })
-  extension: string;
+  extension?: string;
 
   @Prop({
     type: String,
@@ -453,17 +491,17 @@ export class Document {
 
   @Prop({
     type: String,
-    required: true,
     trim: true,
+    default: undefined,
   })
-  mimeType: string;
+  mimeType?: string;
 
   @Prop({
     type: Number,
-    required: true,
     min: 0,
+    default: undefined,
   })
-  size: number;
+  size?: number;
 
   @Prop({
     type: String,
@@ -472,12 +510,6 @@ export class Document {
     required: true,
   })
   status: DocumentStatus;
-
-  @Prop({
-    type: String,
-    trim: true,
-  })
-  statusMessage?: string;
 
   @Prop({
     type: Number,
@@ -502,6 +534,24 @@ export class Document {
     trim: true,
   })
   errorMessage?: string;
+
+  @Prop({
+    type: String,
+    enum: Object.values(DocumentSplitterType),
+    default: undefined,
+  })
+  splitterType?: DocumentSplitterType;
+
+  @Prop({
+    type: Object,
+    default: undefined,
+  })
+  splitConfig?: {
+    chunkSize?: number;
+    chunkOverlap?: number;
+    separators?: string[];
+    encodingName?: string;
+  };
 }
 
 export const DocumentSchema = SchemaFactory.createForClass(Document);
@@ -530,12 +580,19 @@ DocumentSchema.index({ knowledgeBaseId: 1, updatedAt: -1 });
 | `knowledgeBaseId` | string | 是 | 文档归属的知识库 |
 | `name` | string | 否 | 自定义文档名称，不传时可使用原始文件名 |
 
+#### `CreateEditorDocumentDto`
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `knowledgeBaseId` | string | 是 | 文档归属的知识库 |
+| `name` | string | 是 | 编辑器内容的文档标题 |
+| `content` | string | 是 | Markdown 原文 |
+
 #### `UpdateDocumentStatusDto`
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `status` | string | 是 | 文档状态 |
-| `statusMessage` | string | 否 | 状态说明 |
 | `processedAt` | Date | 否 | 处理完成时间 |
 
 说明：
@@ -572,12 +629,15 @@ MVP 必需字段：
 - `sequence`
 - `content`
 - `charCount`
+- `startIndex`
+- `metadata`
 
 后续可扩展字段：
 
+- `endIndex`
 - `tokenCount`
 - `embedding`
-- `metadata`
+- `metadata.blockType`
 
 ### 6.2 表字段说明
 
@@ -590,9 +650,11 @@ MVP 必需字段：
 | `sequence` | number | 是 | 文档内顺序 |
 | `content` | string | 是 | chunk 文本 |
 | `charCount` | number | 是 | 字符数 |
+| `startIndex` | number | 是 | chunk 在原文中的起始位置，推荐由 LangChain `addStartIndex` 生成 |
+| `endIndex` | number | 否 | chunk 在原文中的结束位置 |
 | `tokenCount` | number | 否 | token 数 |
 | `embedding` | number[] | 否 | 向量数据 |
-| `metadata` | object | 否 | 额外元信息 |
+| `metadata` | object | 是 | 来源定位信息，至少支持 `sourceType/contentFormat/page/headingPath` |
 | `createdAt` | Date | 是 | 创建时间 |
 | `updatedAt` | Date | 是 | 更新时间 |
 
@@ -656,6 +718,19 @@ export class DocumentChunk {
 
   @Prop({
     type: Number,
+    required: true,
+    min: 0,
+  })
+  startIndex: number;
+
+  @Prop({
+    type: Number,
+    min: 0,
+  })
+  endIndex?: number;
+
+  @Prop({
+    type: Number,
     min: 0,
   })
   tokenCount?: number;
@@ -668,9 +743,15 @@ export class DocumentChunk {
 
   @Prop({
     type: Object,
-    default: undefined,
+    required: true,
   })
-  metadata?: Record<string, unknown>;
+  metadata: {
+    sourceType: 'upload' | 'editor';
+    contentFormat: 'markdown' | 'plain_text';
+    page?: number;
+    headingPath?: string[];
+    blockType?: string;
+  };
 }
 
 export const DocumentChunkSchema =
@@ -694,8 +775,10 @@ DocumentChunkSchema.index({ knowledgeBaseId: 1 });
 | `sequence` | number | 是 | chunk 顺序 |
 | `content` | string | 是 | chunk 文本 |
 | `charCount` | number | 是 | 字符数 |
+| `startIndex` | number | 是 | chunk 起始位置 |
+| `endIndex` | number | 否 | chunk 结束位置 |
 | `tokenCount` | number | 否 | token 数 |
-| `metadata` | object | 否 | 附加元信息 |
+| `metadata` | object | 是 | 至少保留 `sourceType/contentFormat/page/headingPath` |
 
 #### `RebuildDocumentChunksDto`
 
@@ -737,8 +820,7 @@ MVP 必需字段：
 
 后续可扩展字段：
 
-- `summary`
-- `pinned`
+- `lastMessagePreview`
 
 ### 7.2 表字段说明
 
@@ -750,8 +832,7 @@ MVP 必需字段：
 | `title` | string | 是 | 会话标题 |
 | `messageCount` | number | 是 | 消息数量缓存 |
 | `lastMessageAt` | Date | 否 | 最近发言时间 |
-| `summary` | string | 否 | 会话摘要 |
-| `pinned` | boolean | 否 | 是否置顶 |
+| `lastMessagePreview` | string | 否 | 最近一条消息摘要 |
 | `createdAt` | Date | 是 | 创建时间 |
 | `updatedAt` | Date | 是 | 更新时间 |
 
@@ -805,6 +886,13 @@ export class ChatSession {
     type: Date,
   })
   lastMessageAt?: Date;
+
+  @Prop({
+    type: String,
+    trim: true,
+    maxLength: 300,
+  })
+  lastMessagePreview?: string;
 }
 
 export const ChatSessionSchema = SchemaFactory.createForClass(ChatSession);
@@ -857,16 +945,21 @@ MVP 必需字段：
 - `userId`
 - `knowledgeBaseId`
 - `sessionId`
-- `role`
+- `messageType`
 - `content`
 - `sequence`
 
 后续可扩展字段：
 
+- `messageId`
+- `name`
 - `sources`
-- `model`
-- `usage`
-- `finishReason`
+- `responseMetadata`
+- `usageMetadata`
+- `toolCalls`
+- `toolCallId`
+- `toolName`
+- `artifact`
 
 ### 8.2 表字段说明
 
@@ -876,13 +969,18 @@ MVP 必需字段：
 | `userId` | ObjectId | 是 | 所属用户 |
 | `knowledgeBaseId` | ObjectId | 是 | 所属知识库 |
 | `sessionId` | ObjectId | 是 | 所属会话 |
-| `role` | string | 是 | `user/assistant/system` |
-| `content` | string | 是 | 消息正文 |
+| `messageType` | string | 是 | 对齐 LangChain，推荐 `system/human/ai/tool` |
+| `content` | string / object[] | 是 | 消息正文；后续可兼容 content blocks |
 | `sequence` | number | 是 | 会话内顺序 |
-| `sources` | object[] | 否 | 引用来源快照 |
-| `model` | string | 否 | 使用的模型 |
-| `usage` | object | 否 | token 使用统计 |
-| `finishReason` | string | 否 | 生成结束原因 |
+| `messageId` | string | 否 | LangChain / 模型返回的消息 ID |
+| `name` | string | 否 | 角色别名或工具名 |
+| `sources` | object[] | 否 | `ai` 消息的引用来源快照 |
+| `responseMetadata` | object | 否 | 模型返回元信息 |
+| `usageMetadata` | object | 否 | token 使用统计 |
+| `toolCalls` | object[] | 否 | `ai` 消息中的工具调用请求 |
+| `toolCallId` | string | 否 | `tool` 消息关联的调用 ID |
+| `toolName` | string | 否 | `tool` 消息对应工具名 |
+| `artifact` | object | 否 | `tool` 消息的原始结构化结果 |
 | `createdAt` | Date | 是 | 创建时间 |
 | `updatedAt` | Date | 是 | 更新时间 |
 
@@ -890,14 +988,15 @@ MVP 必需字段：
 
 ```ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type ChatMessageDocument = HydratedDocument<ChatMessage>;
 
-export enum ChatMessageRole {
-  User = 'user',
-  Assistant = 'assistant',
+export enum ChatMessageType {
   System = 'system',
+  Human = 'human',
+  Ai = 'ai',
+  Tool = 'tool',
 }
 
 @Schema({
@@ -932,16 +1031,16 @@ export class ChatMessage {
 
   @Prop({
     type: String,
-    enum: Object.values(ChatMessageRole),
+    enum: Object.values(ChatMessageType),
     required: true,
   })
-  role: ChatMessageRole;
+  messageType: ChatMessageType;
 
   @Prop({
-    type: String,
+    type: MongooseSchema.Types.Mixed,
     required: true,
   })
-  content: string;
+  content: string | Array<Record<string, unknown>>;
 
   @Prop({
     type: Number,
@@ -951,34 +1050,72 @@ export class ChatMessage {
   sequence: number;
 
   @Prop({
+    type: String,
+    trim: true,
+  })
+  messageId?: string;
+
+  @Prop({
+    type: String,
+    trim: true,
+  })
+  name?: string;
+
+  @Prop({
     type: [Object],
     default: undefined,
   })
   sources?: Array<{
+    knowledgeBaseId: string;
     documentId: string;
     documentName: string;
     chunkId: string;
     chunkSequence: number;
     snippet: string;
+    page?: number;
+    headingPath?: string[];
+    startIndex?: number;
+    endIndex?: number;
+    sourceType?: 'upload' | 'editor';
+    contentFormat?: 'markdown' | 'plain_text';
+    score?: number;
   }>;
-
-  @Prop({
-    type: String,
-    trim: true,
-  })
-  model?: string;
 
   @Prop({
     type: Object,
     default: undefined,
   })
-  usage?: Record<string, number>;
+  responseMetadata?: Record<string, unknown>;
+
+  @Prop({
+    type: Object,
+    default: undefined,
+  })
+  usageMetadata?: Record<string, number>;
+
+  @Prop({
+    type: [Object],
+    default: undefined,
+  })
+  toolCalls?: Array<Record<string, unknown>>;
 
   @Prop({
     type: String,
     trim: true,
   })
-  finishReason?: string;
+  toolCallId?: string;
+
+  @Prop({
+    type: String,
+    trim: true,
+  })
+  toolName?: string;
+
+  @Prop({
+    type: Object,
+    default: undefined,
+  })
+  artifact?: Record<string, unknown>;
 }
 
 export const ChatMessageSchema = SchemaFactory.createForClass(ChatMessage);
@@ -1010,10 +1147,12 @@ ChatMessageSchema.index({ userId: 1, knowledgeBaseId: 1 });
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `sessionId` | string | 是 | 所属会话 |
-| `role` | string | 是 | 消息角色 |
-| `content` | string | 是 | 消息正文 |
+| `messageType` | string | 是 | 对齐 LangChain，推荐 `system/human/ai/tool` |
+| `content` | string / object[] | 是 | 消息正文 |
 | `sequence` | number | 是 | 会话顺序 |
 | `sources` | object[] | 否 | 引用来源快照 |
+| `toolCallId` | string | 否 | 工具消息关联 ID |
+| `artifact` | object | 否 | 工具消息的原始结构化结果 |
 
 ### 8.5 Module 示例
 
@@ -1062,8 +1201,11 @@ export class ChatModule {}
 - 还没理清业务归属，就先往表里堆很多字段
 - 把 `embedding` 当成第一阶段必需字段
 - 把 `fileType` 和 `extension` 混成一个字段
+- 把 `sourceType` 和 `contentFormat` 混成一个字段
+- 把 LangChain 的 `chunkSize`、`chunkOverlap` 直接重复存到每条 chunk 上
 - 在多个模块里重复 `forFeature` 同一张集合
 - 没有 `userId` 过滤就直接查文档或会话
+- 在消息表里继续使用一套和 LangChain 不一致的角色枚举
 - 把 `sources` 设计成只能实时回查，导致历史消息不稳定
 
 ---
