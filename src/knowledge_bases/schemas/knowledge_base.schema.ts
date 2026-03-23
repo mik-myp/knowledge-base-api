@@ -31,35 +31,6 @@ export class KnowledgeBase {
     trim: true,
   })
   description?: string;
-
-  @Prop({
-    type: Number,
-    default: 0,
-    min: 0,
-    required: true,
-  })
-  documentCount: number;
-
-  @Prop({
-    type: Number,
-    default: 0,
-    min: 0,
-    required: true,
-  })
-  chunkCount: number;
-
-  @Prop({
-    type: Number,
-    default: 0,
-    min: 0,
-    required: true,
-  })
-  sessionCount: number;
-
-  @Prop({
-    type: Date,
-  })
-  lastIndexedAt?: Date;
 }
 
 export const KnowledgeBaseSchema = SchemaFactory.createForClass(KnowledgeBase);

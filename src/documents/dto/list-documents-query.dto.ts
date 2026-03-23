@@ -1,6 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import {
+  IsInt,
+  IsMongoId,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class ListDocumentsQueryDto {
   @ApiPropertyOptional({
@@ -26,4 +33,20 @@ export class ListDocumentsQueryDto {
   @Min(1, { message: 'pageSize 不能小于 1' })
   @Max(50, { message: 'pageSize 不能大于 50' })
   pageSize?: number = 10;
+
+  @ApiPropertyOptional({
+    description: '按知识库筛选',
+    example: '507f1f77bcf86cd799439013',
+  })
+  @IsOptional()
+  @IsMongoId({ message: 'knowledgeBaseId 必须是合法 ObjectId' })
+  knowledgeBaseId?: string;
+
+  @ApiPropertyOptional({
+    description: '按文件名搜索',
+    example: '项目说明',
+  })
+  @IsOptional()
+  @IsString({ message: 'keyword 必须是字符串' })
+  keyword?: string;
 }

@@ -1,6 +1,7 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { Types } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { UsersService } from './users.service';
 import { UserDocument, UserStatus } from './schemas/user.schema';
@@ -11,7 +12,7 @@ type MockUserModel = {
 
 const createUserDocument = (): UserDocument => {
   return {
-    id: 'user-1',
+    id: '507f1f77bcf86cd799439011',
     email: 'alice@example.com',
     username: 'Alice',
     status: UserStatus.Active,
@@ -38,7 +39,9 @@ describe('UsersService', () => {
         const tokenId =
           typeof payload.jti === 'string' ? payload.jti : 'access-token';
         const secret =
-          typeof options?.secret === 'string' ? options.secret : 'default-secret';
+          typeof options?.secret === 'string'
+            ? options.secret
+            : 'default-secret';
 
         return `${tokenType}:${tokenId}:${secret}`;
       }),
@@ -91,6 +94,16 @@ describe('UsersService', () => {
       return payload.tokenType === 'refresh';
     });
 
+    expect(userModel.findById).toHaveBeenNthCalledWith(
+      1,
+      expect.any(Types.ObjectId),
+    );
+    expect(userModel.findById).toHaveBeenNthCalledWith(
+      2,
+      expect.any(Types.ObjectId),
+    );
+    expect(userModel.findById.mock.calls[0]?.[0].toHexString()).toBe(user.id);
+    expect(userModel.findById.mock.calls[1]?.[0].toHexString()).toBe(user.id);
     expect(firstResult.refreshToken).not.toBe(secondResult.refreshToken);
     expect(refreshCalls).toHaveLength(2);
     expect(refreshCalls[0]?.[0].jti).not.toBe(refreshCalls[1]?.[0].jti);

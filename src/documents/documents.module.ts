@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
-import { DocumnetsService } from './documnets.service';
-import { DocumnetsController } from './documnets.controller';
+import { DocumentsService } from './documents.service';
+import { DocumentsController } from './documents.controller';
 import { MongooseModule } from '@nestjs/mongoose';
-import { Document, DocumentSchema } from './schemas/documnet.schema';
+import { Document, DocumentSchema } from './schemas/document.schema';
 import {
   KnowledgeBase,
   KnowledgeBaseSchema,
@@ -20,7 +20,8 @@ import { StorageModule } from 'src/storage/storage.module';
     ]),
     StorageModule,
   ],
-  controllers: [DocumnetsController],
-  providers: [DocumnetsService],
+  controllers: [DocumentsController],
+  providers: [DocumentsService],
+  exports: [DocumentsService],
 })
-export class DocumnetsModule {}
+export class DocumentsModule {}

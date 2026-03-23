@@ -9,6 +9,7 @@ import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import bcrypt from 'bcryptjs';
 import { Model } from 'mongoose';
+import { toObjectId } from 'src/common/utils/object-id.util';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -74,9 +75,13 @@ export class UsersService {
 
   async refresh(refreshTokenDto: RefreshTokenDto): Promise<TokenPairResult> {
     const payload = await this.verifyRefreshToken(refreshTokenDto.refreshToken);
+    const userObjectId = toObjectId(
+      payload.userId,
+      () => new UnauthorizedException('refreshToken 无效或已过期'),
+    );
 
     const user = this.ensureUserExists(
-      await this.userModel.findById(payload.userId),
+      await this.userModel.findById(userObjectId),
       'refreshToken 无效或已过期',
     );
 
@@ -116,8 +121,12 @@ export class UsersService {
   }
 
   async getActiveUserByIdOrThrow(userId: string): Promise<UserDocument> {
+    const userObjectId = toObjectId(
+      userId,
+      () => new UnauthorizedException('登录状态已失效，请重新登录'),
+    );
     const user = this.ensureUserExists(
-      await this.userModel.findById(userId),
+      await this.userModel.findById(userObjectId),
       '登录状态已失效，请重新登录',
     );
 

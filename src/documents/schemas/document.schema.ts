@@ -3,11 +3,9 @@ import { HydratedDocument, Types } from 'mongoose';
 
 export type DocumentDocument = HydratedDocument<Document>;
 
-export enum DocumentStatus {
-  Pending = 'pending',
-  Processing = 'processing',
-  Ready = 'ready',
-  Failed = 'failed',
+export enum DocumentSourceType {
+  Upload = 'upload',
+  Editor = 'editor',
 }
 
 @Schema({
@@ -33,15 +31,34 @@ export class Document {
   knowledgeBaseId: Types.ObjectId;
 
   @Prop({
+    type: String,
+    enum: Object.values(DocumentSourceType),
+    required: true,
+  })
+  sourceType: DocumentSourceType;
+
+  @Prop({
+    type: String,
     required: true,
     trim: true,
   })
   originalName: string;
 
-  @Prop({ required: true })
-  s3Key: string; // S3 对象键
+  @Prop({
+    type: String,
+    trim: true,
+    default: undefined,
+  })
+  storageKey?: string;
 
   @Prop({
+    type: String,
+    default: undefined,
+  })
+  content?: string;
+
+  @Prop({
+    type: String,
     required: true,
     trim: true,
     lowercase: true,
@@ -52,32 +69,20 @@ export class Document {
     type: String,
     required: true,
     trim: true,
-  })
-  fileType: string;
-
-  @Prop({
-    required: true,
-    trim: true,
     lowercase: true,
   })
   mimeType: string;
 
   @Prop({
+    type: Number,
     required: true,
     min: 0,
   })
   size: number;
-
-  @Prop({
-    type: String,
-    enum: Object.values(DocumentStatus),
-    required: true,
-    default: DocumentStatus.Pending,
-    index: true,
-  })
-  status: DocumentStatus;
 }
 
 export const DocumentSchema = SchemaFactory.createForClass(Document);
 
 DocumentSchema.index({ userId: 1, knowledgeBaseId: 1 });
+DocumentSchema.index({ userId: 1, updatedAt: -1 });
+DocumentSchema.index({ knowledgeBaseId: 1, updatedAt: -1 });

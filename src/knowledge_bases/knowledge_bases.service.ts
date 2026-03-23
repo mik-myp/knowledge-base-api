@@ -3,6 +3,7 @@ import { CreateKnowledgeBaseDto } from './dto/create-knowledge_base.dto';
 import { ListKnowledgeBasesQueryDto } from './dto/list-knowledge-bases-query.dto';
 import { UpdateKnowledgeBaseDto } from './dto/update-knowledge_base.dto';
 import { Model } from 'mongoose';
+import { toObjectId } from 'src/common/utils/object-id.util';
 import {
   KnowledgeBase,
   KnowledgeBaseDocument,
@@ -15,7 +16,7 @@ import type {
 import {
   Document,
   DocumentDocument,
-} from 'src/documnets/schemas/documnet.schema';
+} from 'src/documents/schemas/document.schema';
 import { StorageService } from 'src/storage/storage.service';
 
 @Injectable()
@@ -38,11 +39,9 @@ export class KnowledgeBasesService {
     userId: string,
     createKnowledgeBaseDto: CreateKnowledgeBaseDto,
   ): Promise<KnowledgeBaseRecord> {
+    const userObjectId = toObjectId(userId);
     const newKnowledgeBase = new this.knowledgeBaseModel({
-      userId,
-      documentCount: 0,
-      chunkCount: 0,
-      sessionCount: 0,
+      userId: userObjectId,
       ...createKnowledgeBaseDto,
     });
 
@@ -55,16 +54,17 @@ export class KnowledgeBasesService {
     userId: string,
     query: ListKnowledgeBasesQueryDto,
   ): Promise<KnowledgeBaseListResult | KnowledgeBaseRecord[]> {
+    const userObjectId = toObjectId(userId);
     const { page, pageSize } = query;
     if (page && pageSize) {
       const [knowledgeBases, total] = await Promise.all([
         this.knowledgeBaseModel
-          .find({ userId })
+          .find({ userId: userObjectId })
           .sort({ updatedAt: -1 })
           .skip((page - 1) * pageSize)
           .limit(pageSize)
           .exec(),
-        this.knowledgeBaseModel.countDocuments({ userId }).exec(),
+        this.knowledgeBaseModel.countDocuments({ userId: userObjectId }).exec(),
       ]);
 
       return {
@@ -75,17 +75,21 @@ export class KnowledgeBasesService {
       };
     }
 
-    const knowledgeBases = this.knowledgeBaseModel
-      .find({ userId })
+    const knowledgeBases = await this.knowledgeBaseModel
+      .find({ userId: userObjectId })
       .sort({ updatedAt: -1 })
       .exec();
 
-    return knowledgeBases;
+    return knowledgeBases.map((knowledgeBase) =>
+      this.serializeKnowledgeBase(knowledgeBase),
+    );
   }
 
   async findOne(userId: string, id: string): Promise<KnowledgeBaseRecord> {
+    const userObjectId = toObjectId(userId);
+    const knowledgeBaseObjectId = toObjectId(id);
     const knowledgeBase = await this.knowledgeBaseModel
-      .findOne({ _id: id, userId })
+      .findOne({ _id: knowledgeBaseObjectId, userId: userObjectId })
       .exec();
 
     if (!knowledgeBase) {
@@ -100,11 +104,17 @@ export class KnowledgeBasesService {
     id: string,
     updateKnowledgeBaseDto: UpdateKnowledgeBaseDto,
   ): Promise<KnowledgeBaseRecord> {
+    const userObjectId = toObjectId(userId);
+    const knowledgeBaseObjectId = toObjectId(id);
     const knowledgeBase = await this.knowledgeBaseModel
-      .findOneAndUpdate({ _id: id, userId }, updateKnowledgeBaseDto, {
-        returnDocument: 'after',
-        runValidators: true,
-      })
+      .findOneAndUpdate(
+        { _id: knowledgeBaseObjectId, userId: userObjectId },
+        updateKnowledgeBaseDto,
+        {
+          returnDocument: 'after',
+          runValidators: true,
+        },
+      )
       .exec();
 
     if (!knowledgeBase) {
@@ -115,8 +125,10 @@ export class KnowledgeBasesService {
   }
 
   async remove(userId: string, id: string): Promise<KnowledgeBaseRecord> {
+    const userObjectId = toObjectId(userId);
+    const knowledgeBaseObjectId = toObjectId(id);
     const knowledgeBase = await this.knowledgeBaseModel
-      .findOneAndDelete({ _id: id, userId })
+      .findOneAndDelete({ _id: knowledgeBaseObjectId, userId: userObjectId })
       .exec();
 
     if (!knowledgeBase) {
@@ -124,16 +136,28 @@ export class KnowledgeBasesService {
     }
 
     const documents = await this.documentModel
-      .find({ knowledgeBaseId: id, userId })
+      .find({
+        knowledgeBaseId: knowledgeBaseObjectId,
+        userId: userObjectId,
+      })
       .exec();
 
     if (documents.length) {
       await Promise.all(
         documents.map(async (document) => {
-          await this.storageService.deleteFile(document.s3Key);
+          if (document.storageKey && this.storageService.isConfigured()) {
+            await this.storageService.deleteFile(document.storageKey);
+          }
         }),
       );
     }
+
+    await this.documentModel
+      .deleteMany({
+        knowledgeBaseId: knowledgeBaseObjectId,
+        userId: userObjectId,
+      })
+      .exec();
 
     return this.serializeKnowledgeBase(knowledgeBase);
   }

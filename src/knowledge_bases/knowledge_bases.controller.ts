@@ -39,11 +39,9 @@ export class KnowledgeBasesController {
   constructor(private readonly knowledgeBasesService: KnowledgeBasesService) {}
 
   @Post()
-  @ApiOperation({ summary: '创建知识库主记录与汇总字段' })
+  @ApiOperation({ summary: '创建知识库' })
   @ApiBody({ type: CreateKnowledgeBaseDto })
-  @ApiOkResponse({
-    description: '知识库创建成功。当前接口仅管理知识库主数据与汇总字段。',
-  })
+  @ApiOkResponse({ description: '知识库创建成功。' })
   @ApiUnauthorizedResponse({ description: '未提供有效 accessToken' })
   create(
     @Request() req: UserRequest,
@@ -56,7 +54,7 @@ export class KnowledgeBasesController {
   }
 
   @Get()
-  @ApiOperation({ summary: '获取当前用户的知识库主记录列表' })
+  @ApiOperation({ summary: '获取当前用户的知识库列表' })
   @ApiQuery({
     name: 'page',
     required: false,
@@ -69,10 +67,7 @@ export class KnowledgeBasesController {
     description: '每页数量，最大 50。',
     example: 10,
   })
-  @ApiOkResponse({
-    description:
-      '知识库列表获取成功。当前仅返回知识库主数据与文档/分片/会话汇总字段。',
-  })
+  @ApiOkResponse({ description: '知识库列表获取成功。' })
   @ApiUnauthorizedResponse({ description: '未提供有效 accessToken' })
   findAll(
     @Request() req: UserRequest,
@@ -82,12 +77,9 @@ export class KnowledgeBasesController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '获取当前用户的单个知识库主记录详情' })
+  @ApiOperation({ summary: '获取当前用户的单个知识库详情' })
   @ApiParam({ name: 'id', description: '知识库 ID' })
-  @ApiOkResponse({
-    description:
-      '知识库详情获取成功。当前接口不包含文档列表、问答会话或消息子资源。',
-  })
+  @ApiOkResponse({ description: '知识库详情获取成功。' })
   @ApiUnauthorizedResponse({ description: '未提供有效 accessToken' })
   @ApiBadRequestResponse({ description: '知识库 ID 格式错误' })
   @ApiNotFoundResponse({ description: '知识库不存在' })
@@ -99,12 +91,10 @@ export class KnowledgeBasesController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: '更新当前用户的知识库主记录信息' })
+  @ApiOperation({ summary: '更新当前用户的知识库信息' })
   @ApiParam({ name: 'id', description: '知识库 ID' })
   @ApiBody({ type: UpdateKnowledgeBaseDto })
-  @ApiOkResponse({
-    description: '知识库更新成功。当前仅支持维护知识库主数据字段。',
-  })
+  @ApiOkResponse({ description: '知识库更新成功。' })
   @ApiUnauthorizedResponse({ description: '未提供有效 accessToken' })
   @ApiBadRequestResponse({ description: '知识库 ID 格式错误' })
   @ApiNotFoundResponse({ description: '知识库不存在' })
@@ -121,12 +111,9 @@ export class KnowledgeBasesController {
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: '删除当前用户的知识库主记录' })
+  @ApiOperation({ summary: '删除当前用户的知识库' })
   @ApiParam({ name: 'id', description: '知识库 ID' })
-  @ApiOkResponse({
-    description:
-      '知识库删除成功。文档、会话等下游资源删除策略将在后续模块实现。',
-  })
+  @ApiOkResponse({ description: '知识库删除成功，同时清理关联文档文件。' })
   @ApiUnauthorizedResponse({ description: '未提供有效 accessToken' })
   @ApiBadRequestResponse({ description: '知识库 ID 格式错误' })
   @ApiNotFoundResponse({ description: '知识库不存在' })

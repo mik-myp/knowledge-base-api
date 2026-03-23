@@ -9,7 +9,7 @@ import {
 import {
   Document,
   DocumentSchema,
-} from 'src/documnets/schemas/documnet.schema';
+} from 'src/documents/schemas/document.schema';
 import { StorageModule } from 'src/storage/storage.module';
 
 @Module({

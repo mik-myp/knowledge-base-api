@@ -16,63 +16,92 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 export class StorageService {
   private readonly logger = new Logger(StorageService.name);
 
-  private s3Client: S3Client;
+  private s3Client?: S3Client;
 
-  private s3BucketName: string;
+  private s3BucketName?: string;
 
-  constructor(private configService: ConfigService) {
-    const awsEndPoint = this.configService.getOrThrow<string>('AWS_EMD_POINT');
+  constructor(private configService: ConfigService) {}
 
-    const awsAccessKeyId =
-      this.configService.getOrThrow<string>('AWS_ACCESS_KEY_ID');
+  isConfigured(): boolean {
+    return Boolean(
+      this.configService.get<string>('AWS_EMD_POINT') &&
+      this.configService.get<string>('AWS_ACCESS_KEY_ID') &&
+      this.configService.get<string>('AWS_SECRET_ACCESS_KEY') &&
+      this.configService.get<string>('S3_BUCKET_NAME'),
+    );
+  }
 
-    const awsSecretAccessKey = this.configService.getOrThrow<string>(
+  private ensureClient(): { client: S3Client; bucketName: string } {
+    if (this.s3Client && this.s3BucketName) {
+      return {
+        client: this.s3Client,
+        bucketName: this.s3BucketName,
+      };
+    }
+
+    const endpoint = this.configService.get<string>('AWS_EMD_POINT');
+    const accessKeyId = this.configService.get<string>('AWS_ACCESS_KEY_ID');
+    const secretAccessKey = this.configService.get<string>(
       'AWS_SECRET_ACCESS_KEY',
     );
+    const bucketName = this.configService.get<string>('S3_BUCKET_NAME');
 
-    this.s3BucketName = this.configService.getOrThrow<string>('S3_BUCKET_NAME');
+    if (!endpoint || !accessKeyId || !secretAccessKey || !bucketName) {
+      throw new Error('对象存储配置缺失，无法执行文件上传相关操作');
+    }
 
     this.s3Client = new S3Client({
       region: 'auto',
-      endpoint: awsEndPoint,
+      endpoint,
       credentials: {
-        accessKeyId: awsAccessKeyId,
-        secretAccessKey: awsSecretAccessKey,
+        accessKeyId,
+        secretAccessKey,
       },
     });
+
+    this.s3BucketName = bucketName;
+
+    return {
+      client: this.s3Client,
+      bucketName: this.s3BucketName,
+    };
   }
 
   async uploadFile(
     file: Express.Multer.File,
-    floder?: string,
+    folder?: string,
   ): Promise<string> {
-    const key = (floder ? floder : '') + `${Date.now()} - ${file.originalname}`;
+    const { client, bucketName } = this.ensureClient();
+    const keyPrefix = folder ? `${folder}/` : '';
+    const key = `${keyPrefix}${Date.now()}-${file.originalname}`;
     const command = new PutObjectCommand({
-      Bucket: this.s3BucketName,
+      Bucket: bucketName,
       Key: key,
       Body: file.buffer,
       ContentType: file.mimetype,
     });
 
-    await this.s3Client.send(command);
+    await client.send(command);
 
     return key;
   }
 
   async deleteFile(key: string): Promise<void> {
+    const { client, bucketName } = this.ensureClient();
     const command = new DeleteObjectCommand({
-      Bucket: this.s3BucketName,
+      Bucket: bucketName,
       Key: key,
     });
-    await this.s3Client.send(command);
+    await client.send(command);
   }
 
   async getSignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
+    const { client, bucketName } = this.ensureClient();
     const command = new GetObjectCommand({
-      Bucket: this.s3BucketName,
+      Bucket: bucketName,
       Key: key,
     });
 
-    return getSignedUrl(this.s3Client, command, { expiresIn });
+    return getSignedUrl(client, command, { expiresIn });
   }
 }

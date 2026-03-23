@@ -14,7 +14,7 @@ import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
 import { JwtAuthGuard } from './common/guard/jwt-auth.guard';
 import { UsersModule } from './users/users.module';
 import { KnowledgeBasesModule } from './knowledge_bases/knowledge_bases.module';
-import { DocumnetsModule } from './documnets/documnets.module';
+import { DocumentsModule } from './documents/documents.module';
 
 @Module({
   imports: [
@@ -66,7 +66,7 @@ import { DocumnetsModule } from './documnets/documnets.module';
     PassportModule,
     UsersModule,
     KnowledgeBasesModule,
-    DocumnetsModule,
+    DocumentsModule,
   ],
   controllers: [AppController],
   providers: [
