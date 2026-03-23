@@ -5,6 +5,8 @@ import { DocumentsService } from './documents.service';
 import { Document, DocumentSourceType } from './schemas/document.schema';
 import { KnowledgeBase } from 'src/knowledge_bases/schemas/knowledge_base.schema';
 import { StorageService } from 'src/storage/storage.service';
+import { DocumentChunk } from './schemas/document_chunks.schema';
+import { DocumentIndexingService } from './document-indexing.service';
 
 describe('DocumentsService', () => {
   let service: DocumentsService;
@@ -14,8 +16,14 @@ describe('DocumentsService', () => {
   };
   let documentModel: jest.Mock & {
     aggregate: jest.Mock;
+    deleteMany: jest.Mock;
+    find: jest.Mock;
     findOne: jest.Mock;
     findOneAndDelete: jest.Mock;
+  };
+  let documentChunkModel: {
+    deleteMany: jest.Mock;
+    insertMany: jest.Mock;
   };
 
   const userId = '507f1f77bcf86cd799439011';
@@ -26,6 +34,11 @@ describe('DocumentsService', () => {
     isConfigured: jest.fn().mockReturnValue(true),
     uploadFile: jest.fn(),
     deleteFile: jest.fn(),
+  };
+  const documentIndexingService = {
+    prepareChunks: jest.fn().mockResolvedValue([]),
+    replaceDocumentVectors: jest.fn().mockResolvedValue(undefined),
+    deleteDocumentVectors: jest.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(async () => {
@@ -42,9 +55,19 @@ describe('DocumentsService', () => {
 
     documentModel = Object.assign(jest.fn(), {
       aggregate: jest.fn(),
+      deleteMany: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue(undefined),
+      }),
+      find: jest.fn(),
       findOne: jest.fn(),
       findOneAndDelete: jest.fn(),
     });
+    documentChunkModel = {
+      deleteMany: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue(undefined),
+      }),
+      insertMany: jest.fn().mockResolvedValue(undefined),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -58,8 +81,16 @@ describe('DocumentsService', () => {
           useValue: documentModel,
         },
         {
+          provide: getModelToken(DocumentChunk.name),
+          useValue: documentChunkModel,
+        },
+        {
           provide: StorageService,
           useValue: storageService,
+        },
+        {
+          provide: DocumentIndexingService,
+          useValue: documentIndexingService,
         },
       ],
     }).compile();
@@ -70,6 +101,9 @@ describe('DocumentsService', () => {
   afterEach(() => {
     jest.clearAllMocks();
     storageService.isConfigured.mockReturnValue(true);
+    documentIndexingService.prepareChunks.mockResolvedValue([]);
+    documentIndexingService.replaceDocumentVectors.mockResolvedValue(undefined);
+    documentIndexingService.deleteDocumentVectors.mockResolvedValue(undefined);
   });
 
   it('should be defined', () => {
@@ -83,15 +117,19 @@ describe('DocumentsService', () => {
       'utf8',
     ).toString('latin1');
     const secondOriginalName = 'guide.pdf';
+    const firstCreatedDocumentId = new Types.ObjectId().toHexString();
+    const secondCreatedDocumentId = new Types.ObjectId().toHexString();
 
     const createdDocuments = [
       {
+        id: firstCreatedDocumentId,
         save: jest.fn().mockResolvedValue(undefined),
         toObject: jest.fn().mockReturnValue({
           originalName: firstOriginalName,
         }),
       },
       {
+        id: secondCreatedDocumentId,
         save: jest.fn().mockResolvedValue(undefined),
         toObject: jest.fn().mockReturnValue({
           originalName: secondOriginalName,
@@ -183,6 +221,7 @@ describe('DocumentsService', () => {
     const createdUserId = new Types.ObjectId(userId);
     const createdKnowledgeBaseId = new Types.ObjectId(knowledgeBaseId);
     const createdDocument = {
+      id: createdDocumentId.toHexString(),
       save: jest.fn().mockResolvedValue(undefined),
       toObject: jest.fn().mockReturnValue({
         _id: createdDocumentId,
@@ -226,8 +265,10 @@ describe('DocumentsService', () => {
 
   it('persists uploaded markdown without object storage when storage is not configured', async () => {
     storageService.isConfigured.mockReturnValue(false);
+    const createdDocumentId = new Types.ObjectId().toHexString();
 
     const createdDocument = {
+      id: createdDocumentId,
       save: jest.fn().mockResolvedValue(undefined),
       toObject: jest.fn().mockReturnValue({
         originalName: 'notes.md',
@@ -321,6 +362,159 @@ describe('DocumentsService', () => {
 
     expect(storageService.uploadFile).not.toHaveBeenCalled();
     expect(documentModel).not.toHaveBeenCalled();
+  });
+
+  it('rolls back the current uploaded file when indexing fails', async () => {
+    const createdDocumentId = new Types.ObjectId().toHexString();
+    const createdDocument = {
+      id: createdDocumentId,
+      save: jest.fn().mockResolvedValue(undefined),
+      toObject: jest.fn().mockReturnValue({
+        originalName: 'guide.pdf',
+      }),
+    };
+
+    storageService.uploadFile.mockResolvedValue('folder/guide.pdf');
+    documentIndexingService.prepareChunks.mockRejectedValueOnce(
+      new Error('index failed'),
+    );
+    documentModel.mockImplementationOnce(() => createdDocument);
+
+    await expect(
+      service.upload(
+        userId,
+        [
+          {
+            originalname: 'guide.pdf',
+            mimetype: 'application/pdf',
+            size: 20,
+            buffer: Buffer.from('pdf'),
+          } as Express.Multer.File,
+        ],
+        {
+          knowledgeBaseId,
+        },
+      ),
+    ).rejects.toThrow('index failed');
+
+    expect(documentModel.deleteMany).toHaveBeenCalledWith({
+      _id: expect.any(Types.ObjectId),
+      userId: expect.any(Types.ObjectId),
+    });
+    expect(documentChunkModel.deleteMany).toHaveBeenCalledWith({
+      userId: expect.any(Types.ObjectId),
+      documentId: expect.any(Types.ObjectId),
+    });
+    expect(documentIndexingService.deleteDocumentVectors).toHaveBeenCalledWith(
+      userId,
+      createdDocumentId,
+    );
+    expect(storageService.deleteFile).toHaveBeenCalledWith('folder/guide.pdf');
+  });
+
+  it('rolls back previously uploaded files when a later file fails', async () => {
+    const firstDocumentId = new Types.ObjectId().toHexString();
+    const secondDocumentId = new Types.ObjectId().toHexString();
+    const firstDocument = {
+      id: firstDocumentId,
+      save: jest.fn().mockResolvedValue(undefined),
+      toObject: jest.fn().mockReturnValue({
+        originalName: 'first.md',
+      }),
+    };
+    const secondDocument = {
+      id: secondDocumentId,
+      save: jest.fn().mockResolvedValue(undefined),
+      toObject: jest.fn().mockReturnValue({
+        originalName: 'second.md',
+      }),
+    };
+
+    storageService.uploadFile
+      .mockResolvedValueOnce('folder/first.md')
+      .mockResolvedValueOnce('folder/second.md');
+    documentIndexingService.prepareChunks
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('second file failed'));
+    documentModel
+      .mockImplementationOnce(() => firstDocument)
+      .mockImplementationOnce(() => secondDocument);
+
+    await expect(
+      service.upload(
+        userId,
+        [
+          {
+            originalname: 'first.md',
+            mimetype: 'text/markdown',
+            size: 10,
+            buffer: Buffer.from('# first'),
+          } as Express.Multer.File,
+          {
+            originalname: 'second.md',
+            mimetype: 'text/markdown',
+            size: 11,
+            buffer: Buffer.from('# second'),
+          } as Express.Multer.File,
+        ],
+        {
+          knowledgeBaseId,
+        },
+      ),
+    ).rejects.toThrow('second file failed');
+
+    expect(storageService.deleteFile).toHaveBeenNthCalledWith(
+      1,
+      'folder/second.md',
+    );
+    expect(storageService.deleteFile).toHaveBeenNthCalledWith(
+      2,
+      'folder/first.md',
+    );
+    expect(documentIndexingService.deleteDocumentVectors).toHaveBeenCalledWith(
+      userId,
+      secondDocumentId,
+    );
+    expect(documentIndexingService.deleteDocumentVectors).toHaveBeenCalledWith(
+      userId,
+      firstDocumentId,
+    );
+  });
+
+  it('rolls back editor documents when indexing fails', async () => {
+    const createdDocumentId = new Types.ObjectId().toHexString();
+    const createdDocument = {
+      id: createdDocumentId,
+      save: jest.fn().mockResolvedValue(undefined),
+      toObject: jest.fn().mockReturnValue({
+        originalName: '说明文档',
+      }),
+      originalName: '说明文档',
+      extension: 'md',
+    };
+
+    documentIndexingService.prepareChunks.mockRejectedValueOnce(
+      new Error('editor index failed'),
+    );
+    documentModel.mockImplementationOnce(() => createdDocument);
+
+    await expect(
+      service.createEditorDocument(userId, {
+        knowledgeBaseId,
+        name: '说明文档',
+        content: '# hello',
+      }),
+    ).rejects.toThrow('editor index failed');
+
+    expect(documentModel.deleteMany).toHaveBeenCalledWith({
+      _id: expect.any(Types.ObjectId),
+      userId: expect.any(Types.ObjectId),
+    });
+    expect(storageService.deleteFile).not.toHaveBeenCalled();
+    expect(documentIndexingService.deleteDocumentVectors).toHaveBeenCalledWith(
+      userId,
+      createdDocumentId,
+    );
   });
 
   it('returns paginated documents under the current user with filters applied', async () => {
@@ -444,6 +638,58 @@ describe('DocumentsService', () => {
       userId: foundUserId.toHexString(),
       knowledgeBaseId: foundKnowledgeBaseId.toHexString(),
       originalName: 'demo.md',
+    });
+  });
+
+  it('removes matched documents by ids and clears storage and indexes', async () => {
+    const firstId = new Types.ObjectId().toHexString();
+    const secondId = new Types.ObjectId().toHexString();
+
+    documentModel.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue([
+        {
+          id: firstId,
+          storageKey: 'storage/first.pdf',
+        },
+        {
+          id: secondId,
+          storageKey: undefined,
+        },
+      ]),
+    });
+    documentModel.deleteMany.mockReturnValue({
+      exec: jest.fn().mockResolvedValue({
+        deletedCount: 2,
+      }),
+    });
+
+    const result = await service.removeByDocumentIds(userId, [
+      firstId,
+      secondId,
+      firstId,
+    ]);
+
+    expect(documentModel.find).toHaveBeenCalledWith({
+      _id: {
+        $in: [expect.any(Types.ObjectId), expect.any(Types.ObjectId)],
+      },
+      userId: expect.any(Types.ObjectId),
+    });
+    expect(documentModel.deleteMany).toHaveBeenCalledWith({
+      _id: {
+        $in: [expect.any(Types.ObjectId), expect.any(Types.ObjectId)],
+      },
+      userId: expect.any(Types.ObjectId),
+    });
+    expect(storageService.deleteFile).toHaveBeenCalledWith('storage/first.pdf');
+    expect(documentChunkModel.deleteMany).toHaveBeenCalledTimes(2);
+    expect(documentIndexingService.deleteDocumentVectors).toHaveBeenCalledTimes(
+      2,
+    );
+    expect(result).toEqual({
+      deletedCount: 2,
+      deletedIds: [firstId, secondId],
     });
   });
 });

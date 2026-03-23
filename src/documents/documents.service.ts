@@ -24,6 +24,7 @@ import {
   DocumentChunk,
   DocumentChunkDocument,
 } from './schemas/document_chunks.schema';
+import { DocumentIndexingService } from './document-indexing.service';
 
 const SUPPORTED_UPLOAD_EXTENSIONS = new Set([
   'pdf',
@@ -36,6 +37,21 @@ const SUPPORTED_UPLOAD_EXTENSIONS = new Set([
 
 export const TEXT_UPLOAD_EXTENSIONS = new Set(['md', 'markdown', 'txt']);
 
+type RemoveByDocumentIdsResult = {
+  deletedCount: number;
+  deletedIds: string[];
+};
+
+type CreatedDocumentCleanupTarget = {
+  documentId?: string;
+  storageKey?: string;
+};
+
+type UploadSingleFileResult = {
+  cleanupTarget: CreatedDocumentCleanupTarget;
+  serializedDocument: unknown;
+};
+
 @Injectable()
 export class DocumentsService {
   constructor(
@@ -46,6 +62,7 @@ export class DocumentsService {
     @InjectModel(DocumentChunk.name)
     private readonly documentChunkModel: Model<DocumentChunkDocument>,
     private readonly storageService: StorageService,
+    private readonly documentIndexingService: DocumentIndexingService,
   ) {}
 
   private countExtendedLatinCharacters(value: string): number {
@@ -192,16 +209,38 @@ export class DocumentsService {
 
     if (!chunks.length) return;
 
-    const payload = chunks.map((chunk, index) => ({
-      userId: userObjectId,
-      knowledgeBaseId: knowledgeBaseObjectId,
-      documentId: documentObjectId,
-      sequence: index,
-      content: chunk.content,
-      page: chunk.page,
-      startIndex: chunk.startIndex,
-      endIndex: chunk.endIndex,
-    }));
+    const payload = chunks.map((chunk, index) => {
+      const item: {
+        userId: ReturnType<typeof toObjectId>;
+        knowledgeBaseId: ReturnType<typeof toObjectId>;
+        documentId: ReturnType<typeof toObjectId>;
+        sequence: number;
+        content: string;
+        page?: number;
+        startIndex?: number;
+        endIndex?: number;
+      } = {
+        userId: userObjectId,
+        knowledgeBaseId: knowledgeBaseObjectId,
+        documentId: documentObjectId,
+        sequence: index,
+        content: chunk.content,
+      };
+
+      if (typeof chunk.page === 'number') {
+        item.page = chunk.page;
+      }
+
+      if (typeof chunk.startIndex === 'number') {
+        item.startIndex = chunk.startIndex;
+      }
+
+      if (typeof chunk.endIndex === 'number') {
+        item.endIndex = chunk.endIndex;
+      }
+
+      return item;
+    });
 
     await this.documentChunkModel.insertMany(payload);
   }
@@ -215,11 +254,119 @@ export class DocumentsService {
       .exec();
   }
 
+  private async removeDocumentIndex(userId: string, documentId: string) {
+    await this.deleteDocumentChunks(userId, documentId);
+    await this.documentIndexingService.deleteDocumentVectors(
+      userId,
+      documentId,
+    );
+  }
+
+  private async deleteCreatedDocumentRecord(
+    userId: string,
+    documentId: string,
+  ): Promise<void> {
+    await this.documentModel
+      .deleteMany({
+        _id: toObjectId(documentId),
+        userId: toObjectId(userId),
+      })
+      .exec();
+  }
+
+  private async rollbackCreatedDocument(
+    userId: string,
+    target: CreatedDocumentCleanupTarget,
+  ): Promise<void> {
+    const cleanupErrors: Error[] = [];
+
+    if (target.documentId) {
+      try {
+        await this.removeDocumentIndex(userId, target.documentId);
+      } catch (error) {
+        cleanupErrors.push(
+          error instanceof Error ? error : new Error('删除文档索引失败'),
+        );
+      }
+
+      try {
+        await this.deleteCreatedDocumentRecord(userId, target.documentId);
+      } catch (error) {
+        cleanupErrors.push(
+          error instanceof Error ? error : new Error('删除文档记录失败'),
+        );
+      }
+    }
+
+    if (target.storageKey && this.storageService.isConfigured()) {
+      try {
+        await this.storageService.deleteFile(target.storageKey);
+      } catch (error) {
+        cleanupErrors.push(
+          error instanceof Error ? error : new Error('删除对象存储文件失败'),
+        );
+      }
+    }
+
+    if (cleanupErrors.length > 0) {
+      throw cleanupErrors[0];
+    }
+  }
+
+  private async rollbackCreatedDocuments(
+    userId: string,
+    targets: CreatedDocumentCleanupTarget[],
+  ): Promise<void> {
+    const results = await Promise.allSettled(
+      targets
+        .slice()
+        .reverse()
+        .map((target) => this.rollbackCreatedDocument(userId, target)),
+    );
+
+    const rejectedResult = results.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+
+    if (rejectedResult) {
+      throw rejectedResult.reason instanceof Error
+        ? rejectedResult.reason
+        : new Error('批量回滚上传文件失败');
+    }
+  }
+
+  private async syncDocumentIndex(params: {
+    userId: string;
+    knowledgeBaseId: string;
+    documentId: string;
+    documentName: string;
+    extension: string;
+    content?: string;
+    file?: Express.Multer.File;
+  }) {
+    const chunks = await this.documentIndexingService.prepareChunks(params);
+
+    await this.replaceDocumentChunks(
+      params.userId,
+      params.knowledgeBaseId,
+      params.documentId,
+      chunks,
+    );
+
+    await this.documentIndexingService.replaceDocumentVectors({
+      userId: params.userId,
+      knowledgeBaseId: params.knowledgeBaseId,
+      documentId: params.documentId,
+      documentName: params.documentName,
+      chunks,
+    });
+  }
+
   private async uploadSingleFile(
     userId: string,
     file: Express.Multer.File,
     uploadDocument: UploadDocumentDto,
-  ) {
+  ): Promise<UploadSingleFileResult> {
     const userObjectId = toObjectId(userId);
     const knowledgeBaseObjectId = toObjectId(uploadDocument.knowledgeBaseId);
     const normalizedOriginalName = this.normalizeOriginalName(
@@ -230,31 +377,59 @@ export class DocumentsService {
       originalname: normalizedOriginalName,
     };
 
-    const folder = `${userId}-${uploadDocument.knowledgeBaseId}`;
-    const storageKey = this.storageService.isConfigured()
-      ? await this.storageService.uploadFile(normalizedFile, folder)
-      : undefined;
-
     const extension = this.getFileExtension(normalizedOriginalName);
     const content = TEXT_UPLOAD_EXTENSIONS.has(extension)
       ? normalizedFile.buffer.toString('utf8')
       : undefined;
+    const folder = `${userId}-${uploadDocument.knowledgeBaseId}`;
+    let storageKey: string | undefined;
+    let documentId: string | undefined;
 
-    const newDocument = new this.documentModel({
-      userId: userObjectId,
-      knowledgeBaseId: knowledgeBaseObjectId,
-      sourceType: DocumentSourceType.Upload,
-      storageKey,
-      content,
-      originalName: normalizedOriginalName,
-      mimeType: normalizedFile.mimetype,
-      size: file.size,
-      extension,
-    });
+    try {
+      storageKey = this.storageService.isConfigured()
+        ? await this.storageService.uploadFile(normalizedFile, folder)
+        : undefined;
 
-    await newDocument.save();
+      const newDocument = new this.documentModel({
+        userId: userObjectId,
+        knowledgeBaseId: knowledgeBaseObjectId,
+        sourceType: DocumentSourceType.Upload,
+        storageKey,
+        content,
+        originalName: normalizedOriginalName,
+        mimeType: normalizedFile.mimetype,
+        size: file.size,
+        extension,
+      });
 
-    return serializeMongoResult(newDocument.toObject());
+      await newDocument.save();
+      documentId = newDocument.id;
+
+      await this.syncDocumentIndex({
+        userId,
+        knowledgeBaseId: uploadDocument.knowledgeBaseId,
+        documentId,
+        documentName: normalizedOriginalName,
+        extension,
+        content,
+        file: normalizedFile,
+      });
+
+      return {
+        cleanupTarget: {
+          documentId,
+          storageKey,
+        },
+        serializedDocument: serializeMongoResult(newDocument.toObject()),
+      };
+    } catch (error) {
+      await this.rollbackCreatedDocument(userId, {
+        documentId,
+        storageKey,
+      });
+
+      throw error;
+    }
   }
 
   async upload(
@@ -280,9 +455,31 @@ export class DocumentsService {
       this.assertUploadCanProceedWithoutStorage(extension);
     });
 
-    return Promise.all(
-      files.map((file) => this.uploadSingleFile(userId, file, uploadDocument)),
-    );
+    const uploadedDocuments: UploadSingleFileResult[] = [];
+
+    try {
+      for (const file of files) {
+        const uploadedDocument = await this.uploadSingleFile(
+          userId,
+          file,
+          uploadDocument,
+        );
+        uploadedDocuments.push(uploadedDocument);
+      }
+
+      return uploadedDocuments.map(
+        (uploadedDocument) => uploadedDocument.serializedDocument,
+      );
+    } catch (error) {
+      await this.rollbackCreatedDocuments(
+        userId,
+        uploadedDocuments.map(
+          (uploadedDocument) => uploadedDocument.cleanupTarget,
+        ),
+      );
+
+      throw error;
+    }
   }
 
   async createEditorDocument(
@@ -296,20 +493,40 @@ export class DocumentsService {
 
     const userObjectId = toObjectId(userId);
     const knowledgeBaseObjectId = toObjectId(editorDocument.knowledgeBaseId);
-    const document = new this.documentModel({
-      userId: userObjectId,
-      knowledgeBaseId: knowledgeBaseObjectId,
-      sourceType: DocumentSourceType.Editor,
-      content: editorDocument.content,
-      originalName: editorDocument.name.trim(),
-      extension: 'md',
-      mimeType: 'text/markdown',
-      size: Buffer.byteLength(editorDocument.content, 'utf8'),
-    });
+    let documentId: string | undefined;
 
-    await document.save();
+    try {
+      const document = new this.documentModel({
+        userId: userObjectId,
+        knowledgeBaseId: knowledgeBaseObjectId,
+        sourceType: DocumentSourceType.Editor,
+        content: editorDocument.content,
+        originalName: editorDocument.name.trim(),
+        extension: 'md',
+        mimeType: 'text/markdown',
+        size: Buffer.byteLength(editorDocument.content, 'utf8'),
+      });
 
-    return serializeMongoResult(document.toObject());
+      await document.save();
+      documentId = document.id;
+
+      await this.syncDocumentIndex({
+        userId,
+        knowledgeBaseId: editorDocument.knowledgeBaseId,
+        documentId,
+        documentName: document.originalName,
+        extension: document.extension,
+        content: editorDocument.content,
+      });
+
+      return serializeMongoResult(document.toObject());
+    } catch (error) {
+      await this.rollbackCreatedDocument(userId, {
+        documentId,
+      });
+
+      throw error;
+    }
   }
 
   async findAll(userId: string, query: ListDocumentsQueryDto) {
@@ -393,8 +610,81 @@ export class DocumentsService {
       await this.storageService.deleteFile(document.storageKey);
     }
 
-    await this.deleteDocumentChunks(userId, id);
+    await this.removeDocumentIndex(userId, id);
 
     return serializeMongoResult(document.toObject());
+  }
+
+  async removeByDocumentIds(
+    userId: string,
+    documentIds: string[],
+  ): Promise<RemoveByDocumentIdsResult> {
+    const normalizedDocumentIds = Array.from(
+      new Set(documentIds.filter((id) => Boolean(id?.trim()))),
+    );
+
+    if (!normalizedDocumentIds.length) {
+      return {
+        deletedCount: 0,
+        deletedIds: [],
+      };
+    }
+
+    const userObjectId = toObjectId(userId);
+    const documentObjectIds = normalizedDocumentIds.map((id) => toObjectId(id));
+
+    const documents = await this.documentModel
+      .find({
+        _id: {
+          $in: documentObjectIds,
+        },
+        userId: userObjectId,
+      })
+      .select({
+        _id: 1,
+        storageKey: 1,
+      })
+      .exec();
+
+    if (!documents.length) {
+      return {
+        deletedCount: 0,
+        deletedIds: [],
+      };
+    }
+
+    const deletedIds = documents.map((document) => document.id);
+
+    await this.documentModel
+      .deleteMany({
+        _id: {
+          $in: deletedIds.map((id) => toObjectId(id)),
+        },
+        userId: userObjectId,
+      })
+      .exec();
+
+    const storageKeys = documents
+      .map((document) => document.storageKey)
+      .filter((storageKey): storageKey is string => Boolean(storageKey));
+
+    if (this.storageService.isConfigured() && storageKeys.length) {
+      await Promise.all(
+        storageKeys.map((storageKey) =>
+          this.storageService.deleteFile(storageKey),
+        ),
+      );
+    }
+
+    await Promise.all(
+      deletedIds.map((documentId) =>
+        this.removeDocumentIndex(userId, documentId),
+      ),
+    );
+
+    return {
+      deletedCount: deletedIds.length,
+      deletedIds,
+    };
   }
 }

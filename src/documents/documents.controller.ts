@@ -54,6 +54,20 @@ export class DocumentsController {
     return this.documentsService.findOne(req.user.userId, id);
   }
 
+  @Delete('all')
+  removeAll(
+    @Request() req: UserRequest,
+    @Body()
+    body: {
+      documentIds: string[];
+    },
+  ) {
+    return this.documentsService.removeByDocumentIds(
+      req.user.userId,
+      body.documentIds,
+    );
+  }
+
   @Delete(':id')
   remove(
     @Request() req: UserRequest,

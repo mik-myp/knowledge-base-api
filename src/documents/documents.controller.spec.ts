@@ -11,6 +11,7 @@ describe('DocumentsController', () => {
     findAll: jest.fn(),
     findOne: jest.fn(),
     remove: jest.fn(),
+    removeByDocumentIds: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -93,6 +94,33 @@ describe('DocumentsController', () => {
     );
     expect(result).toEqual({
       originalName: '说明文档',
+    });
+  });
+
+  it('forwards batch document removal to the service', async () => {
+    documentsService.removeByDocumentIds.mockResolvedValue({
+      deletedCount: 2,
+      deletedIds: ['doc-1', 'doc-2'],
+    });
+
+    const result = await controller.removeAll(
+      {
+        user: {
+          userId: 'user-id',
+        },
+      } as never,
+      {
+        documentIds: ['doc-1', 'doc-2'],
+      },
+    );
+
+    expect(documentsService.removeByDocumentIds).toHaveBeenCalledWith(
+      'user-id',
+      ['doc-1', 'doc-2'],
+    );
+    expect(result).toEqual({
+      deletedCount: 2,
+      deletedIds: ['doc-1', 'doc-2'],
     });
   });
 });
