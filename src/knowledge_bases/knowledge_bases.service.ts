@@ -32,7 +32,12 @@ export class KnowledgeBasesService {
   private serializeKnowledgeBase(
     knowledgeBase: KnowledgeBaseDocument,
   ): KnowledgeBaseRecord {
-    return knowledgeBase.toObject() as unknown as KnowledgeBaseRecord;
+    return {
+      id: knowledgeBase.id,
+      userId: knowledgeBase.userId.toString(),
+      name: knowledgeBase.name,
+      description: knowledgeBase.description,
+    };
   }
 
   async create(

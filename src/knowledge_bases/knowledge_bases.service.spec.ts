@@ -23,17 +23,13 @@ describe('KnowledgeBasesService', () => {
   };
 
   const createDocumentMock = (overrides: Record<string, unknown> = {}) => {
-    const serialized = {
+    return {
       id: 'kb-id',
-      userId: 'user-id',
+      userId: new Types.ObjectId(),
       name: '知识库',
       description: '描述',
       ...overrides,
-    };
-
-    return {
       save: jest.fn().mockResolvedValue(undefined),
-      toObject: jest.fn().mockReturnValue(serialized),
     };
   };
 
@@ -98,10 +94,37 @@ describe('KnowledgeBasesService', () => {
     expect(document.save).toHaveBeenCalled();
     expect(result).toEqual({
       id: 'kb-id',
-      userId: 'user-id',
+      userId: document.userId.toString(),
       name: '知识库',
       description: '描述',
     });
+  });
+
+  it('serializes userId as a string when finding all knowledge bases', async () => {
+    const firstDocument = createDocumentMock({ id: 'kb-1' });
+    const secondDocument = createDocumentMock({ id: 'kb-2' });
+    knowledgeBaseModel.find.mockReturnValue({
+      sort: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue([firstDocument, secondDocument]),
+      }),
+    });
+
+    const result = await service.findAll(userId, {});
+
+    expect(result).toEqual([
+      {
+        id: 'kb-1',
+        userId: firstDocument.userId.toString(),
+        name: '知识库',
+        description: '描述',
+      },
+      {
+        id: 'kb-2',
+        userId: secondDocument.userId.toString(),
+        name: '知识库',
+        description: '描述',
+      },
+    ]);
   });
 
   it('serializes a knowledge base when finding one', async () => {
@@ -114,11 +137,10 @@ describe('KnowledgeBasesService', () => {
 
     expect(result).toEqual({
       id: 'kb-find-one',
-      userId: 'user-id',
+      userId: document.userId.toString(),
       name: '知识库',
       description: '描述',
     });
-    expect(document.toObject).toHaveBeenCalled();
     expect(knowledgeBaseModel.findOne).toHaveBeenCalledWith({
       _id: expect.any(Types.ObjectId),
       userId: expect.any(Types.ObjectId),
@@ -140,11 +162,10 @@ describe('KnowledgeBasesService', () => {
 
     expect(result).toEqual({
       id: 'kb-id',
-      userId: 'user-id',
+      userId: document.userId.toString(),
       name: '更新后的知识库',
       description: '描述',
     });
-    expect(document.toObject).toHaveBeenCalled();
     expect(knowledgeBaseModel.findOneAndUpdate).toHaveBeenCalledWith(
       {
         _id: expect.any(Types.ObjectId),
@@ -177,11 +198,10 @@ describe('KnowledgeBasesService', () => {
 
     expect(result).toEqual({
       id: 'kb-delete',
-      userId: 'user-id',
+      userId: document.userId.toString(),
       name: '知识库',
       description: '描述',
     });
-    expect(document.toObject).toHaveBeenCalled();
     expect(documentModel.find).toHaveBeenCalledWith({
       knowledgeBaseId: expect.any(Types.ObjectId),
       userId: expect.any(Types.ObjectId),

@@ -11,17 +11,24 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   return Object.prototype.toString.call(value) === '[object Object]';
 };
 
+const isObjectIdLike = (
+  value: unknown,
+): value is { toHexString: () => string } => {
+  return (
+    value !== null &&
+    value !== undefined &&
+    typeof value === 'object' &&
+    'toHexString' in value &&
+    typeof value.toHexString === 'function'
+  );
+};
+
 const serializeId = (value: unknown): string | undefined => {
   if (typeof value === 'string' || typeof value === 'number') {
     return String(value);
   }
 
-  if (
-    value &&
-    typeof value === 'object' &&
-    'toHexString' in value &&
-    typeof value.toHexString === 'function'
-  ) {
+  if (isObjectIdLike(value)) {
     return value.toHexString();
   }
 
@@ -31,6 +38,10 @@ const serializeId = (value: unknown): string | undefined => {
 export const serializeMongoResult = (value: unknown): unknown => {
   if (Array.isArray(value)) {
     return value.map((item) => serializeMongoResult(item));
+  }
+
+  if (isObjectIdLike(value)) {
+    return value.toHexString();
   }
 
   if (!isPlainObject(value)) {

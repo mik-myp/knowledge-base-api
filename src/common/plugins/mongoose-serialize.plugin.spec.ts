@@ -8,10 +8,12 @@ describe('mongooseSerializePlugin', () => {
   it('serializes nested mongo documents', () => {
     const documentId = new Types.ObjectId('507f1f77bcf86cd799439011');
     const nestedId = new Types.ObjectId('507f1f77bcf86cd799439012');
+    const userId = new Types.ObjectId('507f1f77bcf86cd799439014');
 
     expect(
       serializeMongoResult({
         _id: documentId,
+        userId,
         name: 'document',
         __v: 0,
         nested: {
@@ -21,6 +23,7 @@ describe('mongooseSerializePlugin', () => {
       }),
     ).toEqual({
       id: documentId.toHexString(),
+      userId: userId.toHexString(),
       name: 'document',
       nested: {
         id: nestedId.toHexString(),

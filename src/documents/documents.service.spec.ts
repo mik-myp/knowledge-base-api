@@ -179,9 +179,15 @@ describe('DocumentsService', () => {
   });
 
   it('creates editor documents without object storage', async () => {
+    const createdDocumentId = new Types.ObjectId(documentId);
+    const createdUserId = new Types.ObjectId(userId);
+    const createdKnowledgeBaseId = new Types.ObjectId(knowledgeBaseId);
     const createdDocument = {
       save: jest.fn().mockResolvedValue(undefined),
       toObject: jest.fn().mockReturnValue({
+        _id: createdDocumentId,
+        userId: createdUserId,
+        knowledgeBaseId: createdKnowledgeBaseId,
         originalName: '设计说明',
         sourceType: DocumentSourceType.Editor,
       }),
@@ -210,6 +216,9 @@ describe('DocumentsService', () => {
     expect(storageService.uploadFile).not.toHaveBeenCalled();
     expect(createdDocument.save).toHaveBeenCalled();
     expect(result).toEqual({
+      id: createdDocumentId.toHexString(),
+      userId: createdUserId.toHexString(),
+      knowledgeBaseId: createdKnowledgeBaseId.toHexString(),
       originalName: '设计说明',
       sourceType: DocumentSourceType.Editor,
     });
@@ -411,6 +420,30 @@ describe('DocumentsService', () => {
         },
       ],
       total: 1,
+    });
+  });
+
+  it('serializes objectId fields to strings when finding a document', async () => {
+    const foundDocumentId = new Types.ObjectId(documentId);
+    const foundUserId = new Types.ObjectId(userId);
+    const foundKnowledgeBaseId = new Types.ObjectId(knowledgeBaseId);
+    documentModel.findOne.mockReturnValue({
+      lean: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue({
+        _id: foundDocumentId,
+        userId: foundUserId,
+        knowledgeBaseId: foundKnowledgeBaseId,
+        originalName: 'demo.md',
+      }),
+    });
+
+    const result = await service.findOne(userId, documentId);
+
+    expect(result).toEqual({
+      id: foundDocumentId.toHexString(),
+      userId: foundUserId.toHexString(),
+      knowledgeBaseId: foundKnowledgeBaseId.toHexString(),
+      originalName: 'demo.md',
     });
   });
 });

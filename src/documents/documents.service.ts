@@ -12,6 +12,7 @@ import {
   DocumentDocument,
   DocumentSourceType,
 } from './schemas/document.schema';
+import { serializeMongoResult } from 'src/common/plugins/mongoose-serialize.plugin';
 import {
   KnowledgeBase,
   KnowledgeBaseDocument,
@@ -19,6 +20,10 @@ import {
 import { toObjectId } from 'src/common/utils/object-id.util';
 import { StorageService } from 'src/storage/storage.service';
 import { CreateEditorDocumentDto } from './dto/create-editor-document.dto';
+import {
+  DocumentChunk,
+  DocumentChunkDocument,
+} from './schemas/document_chunks.schema';
 
 const SUPPORTED_UPLOAD_EXTENSIONS = new Set([
   'pdf',
@@ -29,7 +34,7 @@ const SUPPORTED_UPLOAD_EXTENSIONS = new Set([
   'txt',
 ]);
 
-const TEXT_UPLOAD_EXTENSIONS = new Set(['md', 'markdown', 'txt']);
+export const TEXT_UPLOAD_EXTENSIONS = new Set(['md', 'markdown', 'txt']);
 
 @Injectable()
 export class DocumentsService {
@@ -38,6 +43,8 @@ export class DocumentsService {
     private readonly knowledgeBaseModel: Model<KnowledgeBaseDocument>,
     @InjectModel(Document.name)
     private readonly documentModel: Model<DocumentDocument>,
+    @InjectModel(DocumentChunk.name)
+    private readonly documentChunkModel: Model<DocumentChunkDocument>,
     private readonly storageService: StorageService,
   ) {}
 
@@ -160,6 +167,54 @@ export class DocumentsService {
     }
   }
 
+  private async replaceDocumentChunks(
+    userId: string,
+    knowledgeBaseId: string,
+    documentId: string,
+    chunks: Array<{
+      content: string;
+      page?: number;
+      startIndex?: number;
+      endIndex?: number;
+    }>,
+  ) {
+    const userObjectId = toObjectId(userId);
+    const knowledgeBaseObjectId = toObjectId(knowledgeBaseId);
+    const documentObjectId = toObjectId(documentId);
+
+    await this.documentChunkModel
+      .deleteMany({
+        userId: userObjectId,
+        knowledgeBaseId: knowledgeBaseObjectId,
+        documentId: documentObjectId,
+      })
+      .exec();
+
+    if (!chunks.length) return;
+
+    const payload = chunks.map((chunk, index) => ({
+      userId: userObjectId,
+      knowledgeBaseId: knowledgeBaseObjectId,
+      documentId: documentObjectId,
+      sequence: index,
+      content: chunk.content,
+      page: chunk.page,
+      startIndex: chunk.startIndex,
+      endIndex: chunk.endIndex,
+    }));
+
+    await this.documentChunkModel.insertMany(payload);
+  }
+
+  private async deleteDocumentChunks(userId: string, documentId: string) {
+    await this.documentChunkModel
+      .deleteMany({
+        userId: toObjectId(userId),
+        documentId: toObjectId(documentId),
+      })
+      .exec();
+  }
+
   private async uploadSingleFile(
     userId: string,
     file: Express.Multer.File,
@@ -191,7 +246,7 @@ export class DocumentsService {
       sourceType: DocumentSourceType.Upload,
       storageKey,
       content,
-      originalName: uploadDocument.name?.trim() || normalizedOriginalName,
+      originalName: normalizedOriginalName,
       mimeType: normalizedFile.mimetype,
       size: file.size,
       extension,
@@ -199,7 +254,7 @@ export class DocumentsService {
 
     await newDocument.save();
 
-    return newDocument.toObject();
+    return serializeMongoResult(newDocument.toObject());
   }
 
   async upload(
@@ -254,7 +309,7 @@ export class DocumentsService {
 
     await document.save();
 
-    return document.toObject();
+    return serializeMongoResult(document.toObject());
   }
 
   async findAll(userId: string, query: ListDocumentsQueryDto) {
@@ -317,7 +372,7 @@ export class DocumentsService {
       throw new NotFoundException('文档不存在');
     }
 
-    return document;
+    return serializeMongoResult(document);
   }
 
   async remove(userId: string, id: string) {
@@ -338,6 +393,8 @@ export class DocumentsService {
       await this.storageService.deleteFile(document.storageKey);
     }
 
-    return document.toObject();
+    await this.deleteDocumentChunks(userId, id);
+
+    return serializeMongoResult(document.toObject());
   }
 }

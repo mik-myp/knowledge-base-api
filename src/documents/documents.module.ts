@@ -8,6 +8,11 @@ import {
   KnowledgeBaseSchema,
 } from 'src/knowledge_bases/schemas/knowledge_base.schema';
 import { StorageModule } from 'src/storage/storage.module';
+import {
+  DocumentChunk,
+  DocumentChunkSchema,
+} from './schemas/document_chunks.schema';
+import { DocumentIndexingService } from './document-indexing.service';
 
 @Module({
   imports: [
@@ -17,11 +22,15 @@ import { StorageModule } from 'src/storage/storage.module';
         name: Document.name,
         schema: DocumentSchema,
       },
+      {
+        name: DocumentChunk.name,
+        schema: DocumentChunkSchema,
+      },
     ]),
     StorageModule,
   ],
   controllers: [DocumentsController],
-  providers: [DocumentsService],
-  exports: [DocumentsService],
+  providers: [DocumentsService, DocumentIndexingService],
+  exports: [DocumentsService, DocumentIndexingService],
 })
 export class DocumentsModule {}
