@@ -67,6 +67,16 @@ export type ChatAskResponse = {
   sources: ChatMessageSource[];
 };
 
+export type ChatAskStreamChunk = {
+  sessionId: string;
+  answer: string;
+  progress?: string;
+  error?: string;
+  message?: SerializedChatMessage;
+  sources?: ChatMessageSource[];
+  done?: boolean;
+};
+
 export type CreateChatMessageParams = {
   userId: string;
   sessionId: string;

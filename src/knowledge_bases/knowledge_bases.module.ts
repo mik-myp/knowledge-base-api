@@ -10,10 +10,19 @@ import {
   Document,
   DocumentSchema,
 } from 'src/documents/schemas/document.schema';
-import { StorageModule } from 'src/storage/storage.module';
+import { DocumentsModule } from 'src/documents/documents.module';
+import {
+  ChatSession,
+  ChatSessionSchema,
+} from 'src/chat/schemas/chat_session.schema';
+import {
+  ChatMessage,
+  ChatMessageSchema,
+} from 'src/chat/schemas/chat_message.schema';
 
 @Module({
   imports: [
+    DocumentsModule,
     MongooseModule.forFeature([
       {
         name: KnowledgeBase.name,
@@ -23,8 +32,15 @@ import { StorageModule } from 'src/storage/storage.module';
         name: Document.name,
         schema: DocumentSchema,
       },
+      {
+        name: ChatSession.name,
+        schema: ChatSessionSchema,
+      },
+      {
+        name: ChatMessage.name,
+        schema: ChatMessageSchema,
+      },
     ]),
-    StorageModule,
   ],
 
   controllers: [KnowledgeBasesController],

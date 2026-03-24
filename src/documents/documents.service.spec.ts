@@ -34,6 +34,7 @@ describe('DocumentsService', () => {
     isConfigured: jest.fn().mockReturnValue(true),
     uploadFile: jest.fn(),
     deleteFile: jest.fn(),
+    downloadFile: jest.fn(),
   };
   const documentIndexingService = {
     prepareChunks: jest.fn().mockResolvedValue([]),
@@ -104,6 +105,10 @@ describe('DocumentsService', () => {
     documentIndexingService.prepareChunks.mockResolvedValue([]);
     documentIndexingService.replaceDocumentVectors.mockResolvedValue(undefined);
     documentIndexingService.deleteDocumentVectors.mockResolvedValue(undefined);
+    storageService.downloadFile.mockResolvedValue({
+      body: Buffer.from('file-content'),
+      contentType: 'application/pdf',
+    });
   });
 
   it('should be defined', () => {
@@ -638,6 +643,60 @@ describe('DocumentsService', () => {
       userId: foundUserId.toHexString(),
       knowledgeBaseId: foundKnowledgeBaseId.toHexString(),
       originalName: 'demo.md',
+    });
+  });
+
+  it('downloads stored files from object storage', async () => {
+    documentModel.findOne.mockReturnValue({
+      lean: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue({
+        _id: new Types.ObjectId(documentId),
+        userId: new Types.ObjectId(userId),
+        knowledgeBaseId: new Types.ObjectId(knowledgeBaseId),
+        originalName: 'demo.pdf',
+        extension: 'pdf',
+        mimeType: 'application/pdf',
+        storageKey: 'storage/demo.pdf',
+      }),
+    });
+    storageService.downloadFile.mockResolvedValue({
+      body: Buffer.from('pdf-content'),
+      contentType: 'application/pdf',
+    });
+
+    const result = await service.download(userId, documentId);
+
+    expect(storageService.downloadFile).toHaveBeenCalledWith(
+      'storage/demo.pdf',
+    );
+    expect(result).toEqual({
+      fileName: 'demo.pdf',
+      mimeType: 'application/pdf',
+      content: Buffer.from('pdf-content'),
+    });
+  });
+
+  it('downloads inline content for editor documents and appends missing extension', async () => {
+    documentModel.findOne.mockReturnValue({
+      lean: jest.fn().mockReturnThis(),
+      exec: jest.fn().mockResolvedValue({
+        _id: new Types.ObjectId(documentId),
+        userId: new Types.ObjectId(userId),
+        knowledgeBaseId: new Types.ObjectId(knowledgeBaseId),
+        originalName: '设计说明',
+        extension: 'md',
+        mimeType: 'text/markdown',
+        content: '# hello',
+      }),
+    });
+
+    const result = await service.download(userId, documentId);
+
+    expect(storageService.downloadFile).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      fileName: '设计说明.md',
+      mimeType: 'text/markdown',
+      content: Buffer.from('# hello'),
     });
   });
 

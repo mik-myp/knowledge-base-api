@@ -27,6 +27,7 @@ import {
 import { DocumentIndexingService } from './document-indexing.service';
 import type {
   CreatedDocumentCleanupTarget,
+  DocumentDownloadResult,
   RemoveByDocumentIdsResult,
   UploadSingleFileResult,
 } from './types/documents.types';
@@ -103,6 +104,24 @@ export class DocumentsService {
     }
   }
 
+  private async findOwnedDocument(userId: string, id: string) {
+    const userObjectId = toObjectId(userId);
+    const documentObjectId = toObjectId(id);
+    const document = await this.documentModel
+      .findOne({
+        _id: documentObjectId,
+        userId: userObjectId,
+      })
+      .lean()
+      .exec();
+
+    if (!document) {
+      throw new NotFoundException('文档不存在');
+    }
+
+    return document;
+  }
+
   private buildDocumentFilters(
     userId: string,
     query: ListDocumentsQueryDto,
@@ -153,6 +172,22 @@ export class DocumentsService {
 
   private getFileExtension(originalName: string): string {
     return originalName.split('.').pop()?.toLowerCase() || 'other';
+  }
+
+  private buildDownloadFileName(
+    originalName: string,
+    extension: string,
+  ): string {
+    const trimmedOriginalName = originalName.trim();
+    const normalizedExtension = extension.trim().toLowerCase();
+
+    if (!trimmedOriginalName) {
+      return `document.${normalizedExtension}`;
+    }
+
+    return trimmedOriginalName.toLowerCase().endsWith(`.${normalizedExtension}`)
+      ? trimmedOriginalName
+      : `${trimmedOriginalName}.${normalizedExtension}`;
   }
 
   private assertSupportedUploadExtension(extension: string): void {
@@ -565,21 +600,41 @@ export class DocumentsService {
   }
 
   async findOne(userId: string, id: string) {
-    const userObjectId = toObjectId(userId);
-    const documentObjectId = toObjectId(id);
-    const document = await this.documentModel
-      .findOne({
-        _id: documentObjectId,
-        userId: userObjectId,
-      })
-      .lean()
-      .exec();
+    const document = await this.findOwnedDocument(userId, id);
+    return serializeMongoResult(document);
+  }
 
-    if (!document) {
-      throw new NotFoundException('文档不存在');
+  async download(userId: string, id: string): Promise<DocumentDownloadResult> {
+    const document = await this.findOwnedDocument(userId, id);
+    const fileName = this.buildDownloadFileName(
+      String(document.originalName ?? ''),
+      String(document.extension ?? 'txt'),
+    );
+
+    if (typeof document.storageKey === 'string' && document.storageKey) {
+      const { body, contentType } = await this.storageService.downloadFile(
+        document.storageKey,
+      );
+
+      return {
+        fileName,
+        mimeType:
+          typeof contentType === 'string' && contentType.trim()
+            ? contentType
+            : String(document.mimeType),
+        content: body,
+      };
     }
 
-    return serializeMongoResult(document);
+    if (typeof document.content === 'string') {
+      return {
+        fileName,
+        mimeType: String(document.mimeType),
+        content: Buffer.from(document.content, 'utf8'),
+      };
+    }
+
+    throw new NotFoundException('原文件不存在');
   }
 
   async remove(userId: string, id: string) {

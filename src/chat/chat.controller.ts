@@ -8,6 +8,7 @@ import {
   Delete,
   Request,
   Query,
+  Res,
 } from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { CreateChatSessionDto } from './dto/create-chat_session.dto';
@@ -15,6 +16,7 @@ import { UpdateChatSessionDto } from './dto/update-chat_session.dto';
 import type { UserRequest } from 'src/users/types/users.types';
 import { AskChatDto } from './dto/ask-chat.dto';
 import { FindChatMessagesQueryDto } from './dto/find-chat-messages-query.dto';
+import type { Response } from 'express';
 
 @Controller('chat')
 export class ChatController {
@@ -48,8 +50,34 @@ export class ChatController {
   }
 
   @Post('/ask')
-  ask(@Request() req: UserRequest, @Body() askDto: AskChatDto) {
-    return this.chatService.ask(req.user.userId, askDto);
+  ask(
+    @Request() req: UserRequest,
+    @Body() askDto: AskChatDto,
+    @Res() res: Response,
+  ) {
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    const subscription = this.chatService
+      .askStream(req.user.userId, askDto)
+      .subscribe({
+        next: (chunk) => {
+          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        },
+        error: (error: Error) => {
+          res.destroy(error);
+        },
+        complete: () => {
+          res.end();
+        },
+      });
+
+    res.on('close', () => {
+      subscription.unsubscribe();
+    });
   }
 
   @Get('/messages')

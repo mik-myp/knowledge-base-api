@@ -1,6 +1,6 @@
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
-import { ChatMessageType } from './types/chat.types';
+import { of } from 'rxjs';
 
 describe('ChatController', () => {
   const chatService = {
@@ -8,7 +8,7 @@ describe('ChatController', () => {
     findAllSession: jest.fn(),
     updateSession: jest.fn(),
     removeSession: jest.fn(),
-    ask: jest.fn(),
+    askStream: jest.fn(),
     findMessages: jest.fn(),
   } as unknown as jest.Mocked<ChatService>;
 
@@ -25,7 +25,7 @@ describe('ChatController', () => {
     jest.clearAllMocks();
   });
 
-  it('should delegate ask to service', async () => {
+  it('should delegate ask stream to service', async () => {
     const askDto = {
       sessionId: 'session-id',
       messages: [
@@ -36,9 +36,26 @@ describe('ChatController', () => {
       ],
     };
 
-    await controller.ask(request as any, askDto);
+    const response = {
+      setHeader: jest.fn(),
+      flushHeaders: jest.fn(),
+      write: jest.fn(),
+      end: jest.fn(),
+      on: jest.fn(),
+      destroy: jest.fn(),
+    };
 
-    expect(chatService.ask).toHaveBeenCalledWith('user-id', askDto);
+    chatService.askStream.mockReturnValue(
+      of({
+        sessionId: 'session-id',
+        answer: '你好',
+        done: true,
+      }) as any,
+    );
+
+    controller.ask(request as any, askDto, response as any);
+
+    expect(chatService.askStream).toHaveBeenCalledWith('user-id', askDto);
   });
 
   it('should delegate message query to service', async () => {

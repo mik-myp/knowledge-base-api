@@ -9,6 +9,7 @@ describe('DocumentsController', () => {
     upload: jest.fn(),
     createEditorDocument: jest.fn(),
     findAll: jest.fn(),
+    download: jest.fn(),
     findOne: jest.fn(),
     remove: jest.fn(),
     removeByDocumentIds: jest.fn(),
@@ -122,5 +123,44 @@ describe('DocumentsController', () => {
       deletedCount: 2,
       deletedIds: ['doc-1', 'doc-2'],
     });
+  });
+
+  it('writes downloaded document content to the response', async () => {
+    const response = {
+      setHeader: jest.fn(),
+      send: jest.fn(),
+    };
+
+    documentsService.download.mockResolvedValue({
+      fileName: '设计说明.md',
+      mimeType: 'text/markdown',
+      content: Buffer.from('# hello'),
+    });
+
+    await controller.download(
+      {
+        user: {
+          userId: 'user-id',
+        },
+      } as never,
+      'document-id',
+      response as never,
+    );
+
+    expect(documentsService.download).toHaveBeenCalledWith(
+      'user-id',
+      'document-id',
+    );
+    expect(response.setHeader).toHaveBeenNthCalledWith(
+      1,
+      'Content-Type',
+      'text/markdown',
+    );
+    expect(response.setHeader).toHaveBeenNthCalledWith(
+      2,
+      'Content-Disposition',
+      expect.stringContaining("filename*=UTF-8''"),
+    );
+    expect(response.send).toHaveBeenCalledWith(Buffer.from('# hello'));
   });
 });

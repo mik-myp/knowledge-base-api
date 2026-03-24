@@ -4,22 +4,29 @@ import { Types } from 'mongoose';
 import { KnowledgeBasesService } from './knowledge_bases.service';
 import { KnowledgeBase } from './schemas/knowledge_base.schema';
 import { Document } from 'src/documents/schemas/document.schema';
-import { StorageService } from 'src/storage/storage.service';
+import { ChatSession } from 'src/chat/schemas/chat_session.schema';
+import { ChatMessage } from 'src/chat/schemas/chat_message.schema';
+import { DocumentsService } from 'src/documents/documents.service';
 
 describe('KnowledgeBasesService', () => {
   let service: KnowledgeBasesService;
   let knowledgeBaseModel: jest.Mock;
   let documentModel: {
     find: jest.Mock;
+  };
+  let chatSessionModel: {
+    find: jest.Mock;
+    deleteMany: jest.Mock;
+  };
+  let chatMessageModel: {
     deleteMany: jest.Mock;
   };
 
   const userId = '507f1f77bcf86cd799439011';
   const knowledgeBaseId = '507f1f77bcf86cd799439012';
 
-  const storageService = {
-    isConfigured: jest.fn().mockReturnValue(true),
-    deleteFile: jest.fn(),
+  const documentsService = {
+    removeByDocumentIds: jest.fn(),
   };
 
   const createDocumentMock = (overrides: Record<string, unknown> = {}) => {
@@ -44,10 +51,24 @@ describe('KnowledgeBasesService', () => {
       find: jest.fn().mockReturnValue({
         exec: jest.fn().mockResolvedValue([]),
       }),
+    };
+    chatSessionModel = {
+      find: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue([]),
+      }),
       deleteMany: jest.fn().mockReturnValue({
         exec: jest.fn().mockResolvedValue(undefined),
       }),
     };
+    chatMessageModel = {
+      deleteMany: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue(undefined),
+      }),
+    };
+    documentsService.removeByDocumentIds.mockResolvedValue({
+      deletedCount: 0,
+      deletedIds: [],
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -61,8 +82,16 @@ describe('KnowledgeBasesService', () => {
           useValue: documentModel,
         },
         {
-          provide: StorageService,
-          useValue: storageService,
+          provide: getModelToken(ChatSession.name),
+          useValue: chatSessionModel,
+        },
+        {
+          provide: getModelToken(ChatMessage.name),
+          useValue: chatMessageModel,
+        },
+        {
+          provide: DocumentsService,
+          useValue: documentsService,
         },
       ],
     }).compile();
@@ -187,11 +216,17 @@ describe('KnowledgeBasesService', () => {
 
   it('serializes a knowledge base when deleting', async () => {
     const document = createDocumentMock({ id: 'kb-delete' });
+    knowledgeBaseModel.findOne.mockReturnValue({
+      exec: jest.fn().mockResolvedValue(document),
+    });
     knowledgeBaseModel.findOneAndDelete.mockReturnValue({
       exec: jest.fn().mockResolvedValue(document),
     });
     documentModel.find.mockReturnValue({
-      exec: jest.fn().mockResolvedValue([]),
+      exec: jest.fn().mockResolvedValue([{ id: 'doc-1' }, { id: 'doc-2' }]),
+    });
+    chatSessionModel.find.mockReturnValue({
+      exec: jest.fn().mockResolvedValue([{ id: knowledgeBaseId }]),
     });
 
     const result = await service.remove(userId, knowledgeBaseId);
@@ -211,11 +246,21 @@ describe('KnowledgeBasesService', () => {
       knowledgeBaseId,
     );
     expect(deleteFindFilters.userId.toHexString()).toBe(userId);
-    expect(documentModel.deleteMany).toHaveBeenCalledWith({
+    expect(documentsService.removeByDocumentIds).toHaveBeenCalledWith(userId, [
+      'doc-1',
+      'doc-2',
+    ]);
+    expect(chatMessageModel.deleteMany).toHaveBeenCalledWith({
+      userId: expect.any(Types.ObjectId),
+      sessionId: {
+        $in: [expect.any(Types.ObjectId)],
+      },
+    });
+    expect(chatSessionModel.deleteMany).toHaveBeenCalledWith({
       knowledgeBaseId: expect.any(Types.ObjectId),
       userId: expect.any(Types.ObjectId),
     });
-    const deleteFilters = documentModel.deleteMany.mock.calls[0]?.[0];
+    const deleteFilters = chatSessionModel.deleteMany.mock.calls[0]?.[0];
     expect(deleteFilters.knowledgeBaseId.toHexString()).toBe(knowledgeBaseId);
     expect(deleteFilters.userId.toHexString()).toBe(userId);
   });

@@ -35,3 +35,9 @@ export type UploadSingleFileResult = {
   cleanupTarget: CreatedDocumentCleanupTarget;
   serializedDocument: unknown;
 };
+
+export type DocumentDownloadResult = {
+  fileName: string;
+  mimeType: string;
+  content: Buffer;
+};

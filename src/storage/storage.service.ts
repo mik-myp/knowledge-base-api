@@ -104,4 +104,26 @@ export class StorageService {
 
     return getSignedUrl(client, command, { expiresIn });
   }
+
+  async downloadFile(
+    key: string,
+  ): Promise<{ body: Buffer; contentType?: string }> {
+    const { client, bucketName } = this.ensureClient();
+    const command = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: key,
+    });
+    const response = await client.send(command);
+
+    if (!response.Body) {
+      throw new Error('对象存储文件不存在或内容为空');
+    }
+
+    const bytes = await response.Body.transformToByteArray();
+
+    return {
+      body: Buffer.from(bytes),
+      contentType: response.ContentType,
+    };
+  }
 }

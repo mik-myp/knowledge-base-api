@@ -17,7 +17,15 @@ import {
   Document,
   DocumentDocument,
 } from 'src/documents/schemas/document.schema';
-import { StorageService } from 'src/storage/storage.service';
+import { DocumentsService } from 'src/documents/documents.service';
+import {
+  ChatSession,
+  ChatSessionDocument,
+} from 'src/chat/schemas/chat_session.schema';
+import {
+  ChatMessage,
+  ChatMessageDocument,
+} from 'src/chat/schemas/chat_message.schema';
 
 @Injectable()
 export class KnowledgeBasesService {
@@ -26,7 +34,11 @@ export class KnowledgeBasesService {
     private readonly knowledgeBaseModel: Model<KnowledgeBaseDocument>,
     @InjectModel(Document.name)
     private readonly documentModel: Model<DocumentDocument>,
-    private readonly storageService: StorageService,
+    @InjectModel(ChatSession.name)
+    private readonly chatSessionModel: Model<ChatSessionDocument>,
+    @InjectModel(ChatMessage.name)
+    private readonly chatMessageModel: Model<ChatMessageDocument>,
+    private readonly documentsService: DocumentsService,
   ) {}
 
   private serializeKnowledgeBase(
@@ -133,7 +145,7 @@ export class KnowledgeBasesService {
     const userObjectId = toObjectId(userId);
     const knowledgeBaseObjectId = toObjectId(id);
     const knowledgeBase = await this.knowledgeBaseModel
-      .findOneAndDelete({ _id: knowledgeBaseObjectId, userId: userObjectId })
+      .findOne({ _id: knowledgeBaseObjectId, userId: userObjectId })
       .exec();
 
     if (!knowledgeBase) {
@@ -147,21 +159,44 @@ export class KnowledgeBasesService {
       })
       .exec();
 
-    if (documents.length) {
-      await Promise.all(
-        documents.map(async (document) => {
-          if (document.storageKey && this.storageService.isConfigured()) {
-            await this.storageService.deleteFile(document.storageKey);
-          }
-        }),
-      );
+    const documentIds = documents.map((document) => document.id);
+
+    if (documentIds.length > 0) {
+      await this.documentsService.removeByDocumentIds(userId, documentIds);
     }
 
-    await this.documentModel
-      .deleteMany({
+    const chatSessions = await this.chatSessionModel
+      .find({
         knowledgeBaseId: knowledgeBaseObjectId,
         userId: userObjectId,
       })
+      .exec();
+
+    const chatSessionIds = chatSessions.map((chatSession) =>
+      toObjectId(chatSession.id),
+    );
+
+    await Promise.all([
+      chatSessionIds.length > 0
+        ? this.chatMessageModel
+            .deleteMany({
+              userId: userObjectId,
+              sessionId: {
+                $in: chatSessionIds,
+              },
+            })
+            .exec()
+        : Promise.resolve(),
+      this.chatSessionModel
+        .deleteMany({
+          knowledgeBaseId: knowledgeBaseObjectId,
+          userId: userObjectId,
+        })
+        .exec(),
+    ]);
+
+    await this.knowledgeBaseModel
+      .findOneAndDelete({ _id: knowledgeBaseObjectId, userId: userObjectId })
       .exec();
 
     return this.serializeKnowledgeBase(knowledgeBase);

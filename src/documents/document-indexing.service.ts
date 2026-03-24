@@ -1,5 +1,11 @@
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  GatewayTimeoutException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Document as LangChainDocument } from 'langchain';
 import { Collection, Db } from 'mongodb';
@@ -17,8 +23,11 @@ import type {
 
 @Injectable()
 export class DocumentIndexingService {
+  private readonly logger = new Logger(DocumentIndexingService.name);
+
   constructor(
     private readonly langchainService: LangchainService,
+    private readonly configService: ConfigService,
     @InjectConnection() private readonly connection: Connection,
   ) {}
 
@@ -36,6 +45,54 @@ export class DocumentIndexingService {
 
   private getVectorIndexName(): string {
     return process.env.MONGODB_VECTOR_INDEX || 'document_chunk_vector_index';
+  }
+
+  private getStageTimeoutMs(
+    key: 'EMBED_QUERY_TIMEOUT_MS' | 'VECTOR_SEARCH_TIMEOUT_MS',
+    fallback: number,
+  ): number {
+    const configuredValue = this.configService.get<string | number>(key);
+    const normalizedValue =
+      typeof configuredValue === 'number'
+        ? configuredValue
+        : Number(configuredValue);
+
+    if (Number.isInteger(normalizedValue) && normalizedValue > 0) {
+      return normalizedValue;
+    }
+
+    return fallback;
+  }
+
+  private getEmbedQueryTimeoutMs(): number {
+    return this.getStageTimeoutMs('EMBED_QUERY_TIMEOUT_MS', 12000);
+  }
+
+  private getVectorSearchTimeoutMs(): number {
+    return this.getStageTimeoutMs('VECTOR_SEARCH_TIMEOUT_MS', 8000);
+  }
+
+  private async withTimeout<T>(
+    task: Promise<T>,
+    timeoutMs: number,
+    errorMessage: string,
+  ): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      return await Promise.race([
+        task,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new GatewayTimeoutException(errorMessage));
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
   }
 
   private getVectorCollection(): Collection {
@@ -263,42 +320,82 @@ export class DocumentIndexingService {
     knowledgeBaseId: string;
     question: string;
     topK: number;
+    onProgress?: (
+      stage: 'embedding' | 'vector_search' | 'processing_results',
+    ) => void;
   }): Promise<VectorSearchHit[]> {
-    const queryVector = await this.langchainService
-      .createEmbeddings()
-      .embedQuery(params.question);
+    const startedAt = Date.now();
+    const embedTimeoutMs = this.getEmbedQueryTimeoutMs();
+    const vectorSearchTimeoutMs = this.getVectorSearchTimeoutMs();
 
-    return this.getVectorCollection()
-      .aggregate([
-        {
-          $vectorSearch: {
-            index: this.getVectorIndexName(),
-            path: 'embedding',
-            queryVector,
-            numCandidates: Math.max(params.topK * 10, 50),
-            limit: params.topK,
-            filter: {
-              userId: params.userId,
-              knowledgeBaseId: params.knowledgeBaseId,
+    params.onProgress?.('embedding');
+
+    const embedStartedAt = Date.now();
+    const queryVector = await this.withTimeout(
+      this.langchainService.createEmbeddings().embedQuery(params.question),
+      embedTimeoutMs,
+      '生成问题向量超时，请稍后重试',
+    );
+
+    this.logger.log(
+      `semanticSearch embedQuery completed in ${Date.now() - embedStartedAt}ms; knowledgeBaseId=${params.knowledgeBaseId}; topK=${params.topK}; questionLength=${params.question.length}`,
+    );
+
+    params.onProgress?.('vector_search');
+
+    const vectorSearchStartedAt = Date.now();
+    const hits = await this.withTimeout(
+      this.getVectorCollection()
+        .aggregate(
+          [
+            {
+              $vectorSearch: {
+                index: this.getVectorIndexName(),
+                path: 'embedding',
+                queryVector,
+                numCandidates: Math.max(params.topK * 10, 50),
+                limit: params.topK,
+                filter: {
+                  userId: params.userId,
+                  knowledgeBaseId: params.knowledgeBaseId,
+                },
+              },
             },
-          },
-        },
-        {
-          $project: {
-            _id: 0,
-            documentId: 1,
-            documentName: 1,
-            sequence: 1,
-            text: 1,
-            page: 1,
-            startIndex: 1,
-            endIndex: 1,
-            score: {
-              $meta: 'vectorSearchScore',
+            {
+              $project: {
+                _id: 0,
+                documentId: 1,
+                documentName: 1,
+                sequence: 1,
+                text: 1,
+                page: 1,
+                startIndex: 1,
+                endIndex: 1,
+                score: {
+                  $meta: 'vectorSearchScore',
+                },
+              },
             },
+          ],
+          {
+            maxTimeMS: vectorSearchTimeoutMs,
           },
-        },
-      ])
-      .toArray() as Promise<VectorSearchHit[]>;
+        )
+        .toArray() as Promise<VectorSearchHit[]>,
+      vectorSearchTimeoutMs,
+      '向量检索超时，请稍后重试',
+    );
+
+    this.logger.log(
+      `semanticSearch vectorSearch completed in ${Date.now() - vectorSearchStartedAt}ms; knowledgeBaseId=${params.knowledgeBaseId}; hitCount=${hits.length}`,
+    );
+
+    params.onProgress?.('processing_results');
+
+    this.logger.log(
+      `semanticSearch finished in ${Date.now() - startedAt}ms; knowledgeBaseId=${params.knowledgeBaseId}; hitCount=${hits.length}`,
+    );
+
+    return hits;
   }
 }

@@ -1,10 +1,21 @@
 import { DocumentIndexingService } from 'src/documents/document-indexing.service';
 import { LangchainService } from 'src/langchain/langchain.service';
 import { ChatService } from './chat.service';
-import { ChatMessageType, type SerializedChatMessage } from './types/chat.types';
+import {
+  ChatMessageType,
+  type SerializedChatMessage,
+} from './types/chat.types';
 
 describe('ChatService', () => {
   let service: ChatService;
+
+  const toAsyncIterable = <T>(items: T[]): AsyncIterable<T> => ({
+    async *[Symbol.asyncIterator]() {
+      for (const item of items) {
+        yield item;
+      }
+    },
+  });
 
   const chatSessionModel = {} as any;
   const chatMessageModel = {} as any;
@@ -49,23 +60,25 @@ describe('ChatService', () => {
       .spyOn(service as any, 'getLastSequence')
       .mockResolvedValueOnce(-1)
       .mockResolvedValueOnce(0);
-    jest
-      .spyOn(service as any, 'appendIncomingMessages')
-      .mockResolvedValue([]);
+    jest.spyOn(service as any, 'appendIncomingMessages').mockResolvedValue([]);
     jest.spyOn(service as any, 'loadSessionMessages').mockResolvedValue([]);
     langchainService.createChatModel.mockReturnValue({
-      invoke: jest.fn().mockResolvedValue({
-        content: 'hello',
-        response_metadata: {
-          model_name: 'test-model',
-        },
-        usage_metadata: {
-          input_tokens: 1,
-          output_tokens: 1,
-          total_tokens: 2,
-        },
-        tool_calls: [],
-      }),
+      stream: jest.fn().mockResolvedValue(
+        toAsyncIterable([
+          {
+            content: 'hello',
+            response_metadata: {
+              model_name: 'test-model',
+            },
+            usage_metadata: {
+              input_tokens: 1,
+              output_tokens: 1,
+              total_tokens: 2,
+            },
+            tool_calls: [],
+          },
+        ]),
+      ),
     } as any);
     jest
       .spyOn(service as any, 'appendAssistantMessage')
@@ -134,28 +147,28 @@ describe('ChatService', () => {
       .spyOn(service as any, 'getLastSequence')
       .mockResolvedValueOnce(1)
       .mockResolvedValueOnce(2);
-    jest
-      .spyOn(service as any, 'appendIncomingMessages')
-      .mockResolvedValue([]);
+    jest.spyOn(service as any, 'appendIncomingMessages').mockResolvedValue([]);
     jest.spyOn(service as any, 'loadSessionMessages').mockResolvedValue([]);
     langchainService.createChatModel.mockReturnValue({
-      invoke: jest.fn().mockResolvedValue({
-        content: 'answer from knowledge',
-        response_metadata: {},
-        usage_metadata: {
-          input_tokens: 3,
-          output_tokens: 4,
-          total_tokens: 7,
-        },
-        tool_calls: [],
-      }),
+      stream: jest.fn().mockResolvedValue(
+        toAsyncIterable([
+          {
+            content: 'answer from knowledge',
+            response_metadata: {},
+            usage_metadata: {
+              input_tokens: 3,
+              output_tokens: 4,
+              total_tokens: 7,
+            },
+            tool_calls: [],
+          },
+        ]),
+      ),
     } as any);
     jest
       .spyOn(service as any, 'appendAssistantMessage')
       .mockResolvedValue(aiMessage);
-    jest
-      .spyOn(service as any, 'touchSession')
-      .mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'touchSession').mockResolvedValue(undefined);
     documentIndexingService.semanticSearch.mockResolvedValue([
       {
         documentId: 'document-id',

@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  GatewayTimeoutException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -9,9 +11,11 @@ import {
   HumanMessage,
   SystemMessage,
   ToolMessage,
+  type AIMessageChunk,
   type BaseMessage,
 } from 'langchain';
 import { Model } from 'mongoose';
+import { Observable, lastValueFrom } from 'rxjs';
 import { serializeMongoResult } from 'src/common/plugins/mongoose-serialize.plugin';
 import { toObjectId } from 'src/common/utils/object-id.util';
 import { DocumentIndexingService } from 'src/documents/document-indexing.service';
@@ -35,6 +39,7 @@ import {
 import {
   ChatMessageType,
   type ChatAskResponse,
+  type ChatAskStreamChunk,
   type CreateChatMessageParams,
   type SerializedChatMessage,
   type SerializedChatSession,
@@ -42,6 +47,8 @@ import {
 
 @Injectable()
 export class ChatService {
+  private readonly logger = new Logger(ChatService.name);
+
   constructor(
     @InjectModel(ChatSession.name)
     private readonly chatSessionModel: Model<ChatSessionDocument>,
@@ -330,6 +337,35 @@ export class ChatService {
     return '';
   }
 
+  private extractModelText(content: unknown) {
+    if (typeof content === 'string') {
+      return content;
+    }
+
+    if (Array.isArray(content)) {
+      return content
+        .map((item) => {
+          if (typeof item === 'string') {
+            return item;
+          }
+
+          if (
+            item &&
+            typeof item === 'object' &&
+            'text' in item &&
+            typeof item.text === 'string'
+          ) {
+            return item.text;
+          }
+
+          return '';
+        })
+        .join('');
+    }
+
+    return '';
+  }
+
   private toLangChainMessage(message: SerializedChatMessage): BaseMessage {
     if (message.messageType === ChatMessageType.System) {
       return new SystemMessage({
@@ -388,6 +424,63 @@ export class ChatService {
         },
       )
       .exec();
+  }
+
+  private buildProgressMessages(hasKnowledgeBase: boolean): string[] {
+    if (hasKnowledgeBase) {
+      return [
+        '正在检索相关知识片段...',
+        '正在分析知识库内容...',
+        '正在组织知识库回答...',
+      ];
+    }
+
+    return ['正在分析你的问题...', '正在整理回答结构...', '正在生成回答...'];
+  }
+
+  private buildKnowledgeBaseStageProgressMessages(
+    stage:
+      | 'preparing_context'
+      | 'embedding'
+      | 'vector_search'
+      | 'processing_results'
+      | 'generating_answer',
+  ): string[] {
+    switch (stage) {
+      case 'preparing_context':
+        return [
+          '会话已创建，正在准备知识库上下文...',
+          '正在初始化知识库检索...',
+        ];
+      case 'embedding':
+        return ['正在生成问题向量...', '问题向量生成中...'];
+      case 'vector_search':
+        return ['正在执行向量检索...', '向量检索中...'];
+      case 'processing_results':
+        return ['正在整理检索结果...', '检索结果整理中...'];
+      case 'generating_answer':
+        return ['正在结合知识库生成回答...', '知识库回答生成中...'];
+      default:
+        return ['正在处理中...'];
+    }
+  }
+
+  private resolveStreamErrorMessage(error: unknown): string {
+    if (error instanceof GatewayTimeoutException) {
+      const timeoutMessage = error.message?.trim();
+      return timeoutMessage || '知识库检索超时，请稍后重试';
+    }
+
+    if (error instanceof BadRequestException) {
+      const message = error.message?.trim();
+      return message || '请求参数错误，请稍后重试';
+    }
+
+    if (error instanceof Error && error.message.trim()) {
+      return error.message.trim();
+    }
+
+    return '本次问答处理失败，请稍后重试';
   }
 
   async createSession(userId: string, createChatDto: CreateChatSessionDto) {
@@ -476,76 +569,269 @@ export class ChatService {
     return this.serializeChatSession(chatSession);
   }
 
-  async ask(userId: string, dto: AskChatDto): Promise<ChatAskResponse> {
-    const latestHumanMessage = this.getLatestHumanMessage(dto);
-    const session = await this.resolveSession(
-      userId,
-      dto,
-      latestHumanMessage.content,
-    );
+  askStream(userId: string, dto: AskChatDto): Observable<ChatAskStreamChunk> {
+    return new Observable<ChatAskStreamChunk>((subscriber) => {
+      let cancelled = false;
+      let currentSessionId: string | undefined;
+      let progressTimer: ReturnType<typeof setInterval> | undefined;
+      let progressIndex = 0;
 
-    const existingSequence = await this.getLastSequence(session.id);
+      const stopProgressHeartbeat = (): void => {
+        if (progressTimer) {
+          clearInterval(progressTimer);
+          progressTimer = undefined;
+        }
+      };
 
-    await this.appendIncomingMessages(userId, session.id, dto);
+      const emitProgress = (
+        sessionId: string,
+        progress: string,
+        sources: SerializedChatMessage['sources'] = [],
+      ): void => {
+        if (cancelled) {
+          return;
+        }
 
-    const historyMessages = await this.loadSessionMessages(userId, session.id);
-    const sources: SerializedChatMessage['sources'] = [];
-    let systemPrompt = this.buildSystemPrompt();
+        subscriber.next({
+          sessionId,
+          answer: '',
+          progress,
+          sources,
+          done: false,
+        });
+      };
 
-    if (session.knowledgeBaseId) {
-      const hits = await this.documentIndexingService.semanticSearch({
-        userId,
-        knowledgeBaseId: String(session.knowledgeBaseId),
-        question: latestHumanMessage.content,
-        topK: dto.topK ?? 5,
+      const startProgressHeartbeat = (
+        sessionId: string,
+        progressMessages: string[],
+        sources: SerializedChatMessage['sources'] = [],
+      ): void => {
+        stopProgressHeartbeat();
+        progressIndex = 0;
+
+        progressTimer = setInterval(() => {
+          const nextProgress =
+            progressMessages[progressIndex % progressMessages.length];
+
+          progressIndex += 1;
+          emitProgress(sessionId, nextProgress, sources);
+        }, 1500);
+      };
+
+      void (async () => {
+        const latestHumanMessage = this.getLatestHumanMessage(dto);
+        const session = await this.resolveSession(
+          userId,
+          dto,
+          latestHumanMessage.content,
+        );
+        currentSessionId = session.id;
+
+        const existingSequence = await this.getLastSequence(session.id);
+
+        await this.appendIncomingMessages(userId, session.id, dto);
+
+        if (cancelled) {
+          return;
+        }
+
+        subscriber.next({
+          sessionId: session.id,
+          answer: '',
+          progress: session.knowledgeBaseId
+            ? '会话已创建，正在准备知识库上下文...'
+            : '会话已创建，正在准备回答...',
+          sources: [],
+          done: false,
+        });
+
+        startProgressHeartbeat(
+          session.id,
+          session.knowledgeBaseId
+            ? this.buildKnowledgeBaseStageProgressMessages('preparing_context')
+            : this.buildProgressMessages(false),
+        );
+
+        const historyMessages = await this.loadSessionMessages(
+          userId,
+          session.id,
+        );
+        const sources: SerializedChatMessage['sources'] = [];
+        let systemPrompt = this.buildSystemPrompt();
+
+        if (session.knowledgeBaseId) {
+          const hits = await this.documentIndexingService.semanticSearch({
+            userId,
+            knowledgeBaseId: String(session.knowledgeBaseId),
+            question: latestHumanMessage.content,
+            topK: dto.topK ?? 5,
+            onProgress: (stage) => {
+              if (stage === 'embedding') {
+                emitProgress(session.id, '正在生成问题向量...', sources);
+                startProgressHeartbeat(
+                  session.id,
+                  this.buildKnowledgeBaseStageProgressMessages('embedding'),
+                  sources,
+                );
+                return;
+              }
+
+              if (stage === 'vector_search') {
+                emitProgress(session.id, '正在执行向量检索...', sources);
+                startProgressHeartbeat(
+                  session.id,
+                  this.buildKnowledgeBaseStageProgressMessages('vector_search'),
+                  sources,
+                );
+                return;
+              }
+
+              emitProgress(session.id, '正在整理检索结果...', sources);
+              startProgressHeartbeat(
+                session.id,
+                this.buildKnowledgeBaseStageProgressMessages(
+                  'processing_results',
+                ),
+                sources,
+              );
+            },
+          });
+
+          systemPrompt = this.buildSystemPrompt(this.buildContextText(hits));
+          sources.push(
+            ...hits.map((hit) => ({
+              documentId: hit.documentId,
+              documentName: hit.documentName,
+              chunkSequence: hit.sequence,
+              page: hit.page,
+              startIndex: hit.startIndex,
+              endIndex: hit.endIndex,
+              score: hit.score,
+            })),
+          );
+        }
+
+        emitProgress(
+          session.id,
+          session.knowledgeBaseId
+            ? '正在结合知识库生成回答...'
+            : '正在调用模型生成回答...',
+          sources,
+        );
+        startProgressHeartbeat(
+          session.id,
+          session.knowledgeBaseId
+            ? this.buildKnowledgeBaseStageProgressMessages('generating_answer')
+            : this.buildProgressMessages(false),
+          sources,
+        );
+
+        const model = this.langchainService.createChatModel();
+        const stream = await model.stream([
+          new SystemMessage(systemPrompt),
+          ...historyMessages.map((message) => this.toLangChainMessage(message)),
+        ]);
+
+        let answer = '';
+        let lastChunk: AIMessageChunk | null = null;
+
+        for await (const chunk of stream) {
+          if (cancelled) {
+            stopProgressHeartbeat();
+            return;
+          }
+
+          lastChunk = chunk;
+          answer += this.extractModelText(chunk.content);
+
+          if (answer) {
+            stopProgressHeartbeat();
+          }
+
+          subscriber.next({
+            sessionId: session.id,
+            answer,
+            sources,
+            done: false,
+          });
+        }
+
+        const normalizedAnswer = answer.trim() || '未获取到有效回答';
+        stopProgressHeartbeat();
+
+        const assistantMessage = await this.appendAssistantMessage({
+          userId,
+          sessionId: session.id,
+          answer: normalizedAnswer,
+          responseMetadata: lastChunk?.response_metadata,
+          usageMetadata: lastChunk?.usage_metadata,
+          toolCalls: lastChunk?.tool_calls,
+          sources,
+        });
+
+        await this.touchSession(
+          session.id,
+          existingSequence < 0
+            ? this.buildSessionTitle(latestHumanMessage.content)
+            : undefined,
+        );
+
+        if (cancelled) {
+          return;
+        }
+
+        subscriber.next({
+          sessionId: session.id,
+          answer: normalizedAnswer,
+          message: assistantMessage,
+          sources,
+          done: true,
+        });
+        subscriber.complete();
+      })().catch((error: unknown) => {
+        stopProgressHeartbeat();
+
+        const errorMessage = this.resolveStreamErrorMessage(error);
+
+        this.logger.error(
+          `askStream failed; sessionId=${currentSessionId ?? 'unknown'}; userId=${userId}; message=${errorMessage}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+
+        if (currentSessionId && !cancelled) {
+          subscriber.next({
+            sessionId: currentSessionId,
+            answer: '',
+            error: errorMessage,
+            sources: [],
+            done: true,
+          });
+          subscriber.complete();
+          return;
+        }
+
+        subscriber.error(error);
       });
 
-      systemPrompt = this.buildSystemPrompt(this.buildContextText(hits));
-      sources.push(
-        ...hits.map((hit) => ({
-          documentId: hit.documentId,
-          documentName: hit.documentName,
-          chunkSequence: hit.sequence,
-          page: hit.page,
-          startIndex: hit.startIndex,
-          endIndex: hit.endIndex,
-          score: hit.score,
-        })),
-      );
+      return () => {
+        cancelled = true;
+        stopProgressHeartbeat();
+      };
+    });
+  }
+
+  async ask(userId: string, dto: AskChatDto): Promise<ChatAskResponse> {
+    const finalChunk = await lastValueFrom(this.askStream(userId, dto));
+
+    if (!finalChunk.message || !finalChunk.sources) {
+      throw new BadRequestException('未获取到完整回答');
     }
 
-    const response = await this.langchainService
-      .createChatModel()
-      .invoke([
-        new SystemMessage(systemPrompt),
-        ...historyMessages.map((message) => this.toLangChainMessage(message)),
-      ]);
-
-    const answer =
-      this.normalizeModelOutput(response.content) || '未获取到有效回答';
-
-    const assistantMessage = await this.appendAssistantMessage({
-      userId,
-      sessionId: session.id,
-      answer,
-      responseMetadata: response.response_metadata,
-      usageMetadata: response.usage_metadata,
-      toolCalls: response.tool_calls,
-      sources,
-    });
-
-    await this.touchSession(
-      session.id,
-      existingSequence < 0
-        ? this.buildSessionTitle(latestHumanMessage.content)
-        : undefined,
-    );
-
     return {
-      sessionId: session.id,
-      answer,
-      message: assistantMessage,
-      sources,
+      sessionId: finalChunk.sessionId,
+      answer: finalChunk.answer,
+      message: finalChunk.message,
+      sources: finalChunk.sources,
     };
   }
 

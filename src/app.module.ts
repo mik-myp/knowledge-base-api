@@ -27,21 +27,29 @@ import { ChatModule } from './chat/chat.module';
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: async (configService: ConfigService) => ({
-        uri:
-          configService.get<string>('MONGODB_URI') ||
-          'mongodb://localhost:27017/knowledge-base-api',
-        serverApi: {
-          version: '1',
-          strict: true,
-          deprecationErrors: true,
-        },
-        dbName: 'knowledge',
-        connectionFactory: (connection) => {
-          connection.plugin(mongooseSerializePlugin);
-          return connection;
-        },
-      }),
+      useFactory: async (configService: ConfigService) => {
+        const strictValue =
+          configService.get<string>('MONGODB_SERVER_API_STRICT') ?? 'false';
+        const deprecationErrorsValue =
+          configService.get<string>('MONGODB_SERVER_API_DEPRECATION_ERRORS') ??
+          'true';
+
+        return {
+          uri:
+            configService.get<string>('MONGODB_URI') ||
+            'mongodb://localhost:27017/knowledge-base-api',
+          serverApi: {
+            version: '1',
+            strict: strictValue === 'true',
+            deprecationErrors: deprecationErrorsValue !== 'false',
+          },
+          dbName: 'knowledge',
+          connectionFactory: (connection) => {
+            connection.plugin(mongooseSerializePlugin);
+            return connection;
+          },
+        };
+      },
     }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

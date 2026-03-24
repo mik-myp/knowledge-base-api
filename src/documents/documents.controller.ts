@@ -9,6 +9,7 @@ import {
   Delete,
   Param,
   UploadedFiles,
+  Res,
 } from '@nestjs/common';
 import { DocumentsService } from './documents.service';
 
@@ -18,6 +19,13 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { ListDocumentsQueryDto } from './dto/list-documents-query.dto';
 import { ParseObjectIdPipe } from 'src/common/pipes/parse-object-id.pipe';
 import { CreateEditorDocumentDto } from './dto/create-editor-document.dto';
+import type { Response } from 'express';
+
+const buildContentDisposition = (fileName: string): string => {
+  const asciiFileName = fileName.replace(/[^\x20-\x7E]+/g, '_') || 'document';
+
+  return `attachment; filename="${asciiFileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+};
 
 @Controller('documents')
 export class DocumentsController {
@@ -44,6 +52,22 @@ export class DocumentsController {
   @Get()
   findAll(@Request() req: UserRequest, @Query() query: ListDocumentsQueryDto) {
     return this.documentsService.findAll(req.user.userId, query);
+  }
+
+  @Get(':id/download')
+  async download(
+    @Request() req: UserRequest,
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const file = await this.documentsService.download(req.user.userId, id);
+
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      buildContentDisposition(file.fileName),
+    );
+    res.send(file.content);
   }
 
   @Get(':id')
