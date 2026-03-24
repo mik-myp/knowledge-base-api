@@ -19,7 +19,7 @@ import type {
   TokenPairResult,
   UserProfile,
   UserRequest,
-} from './users';
+} from './types/users.types';
 
 @ApiTags('users')
 @Controller('users')

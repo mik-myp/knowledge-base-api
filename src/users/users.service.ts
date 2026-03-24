@@ -21,7 +21,7 @@ import {
   type RefreshTokenPayload,
   type TokenPairResult,
   type UserProfile,
-} from './users';
+} from './types/users.types';
 
 @Injectable()
 export class UsersService {

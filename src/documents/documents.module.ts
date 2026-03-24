@@ -13,6 +13,7 @@ import {
   DocumentChunkSchema,
 } from './schemas/document_chunks.schema';
 import { DocumentIndexingService } from './document-indexing.service';
+import { LangchainModule } from 'src/langchain/langchain.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { DocumentIndexingService } from './document-indexing.service';
       },
     ]),
     StorageModule,
+    LangchainModule,
   ],
   controllers: [DocumentsController],
   providers: [DocumentsService, DocumentIndexingService],

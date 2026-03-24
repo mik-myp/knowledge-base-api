@@ -12,7 +12,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import type {
   KnowledgeBaseListResult,
   KnowledgeBaseRecord,
-} from './knowledge_bases';
+} from './types/knowledge-bases.types';
 import {
   Document,
   DocumentDocument,

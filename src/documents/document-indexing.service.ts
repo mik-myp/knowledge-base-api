@@ -1,44 +1,24 @@
-import { OpenAIEmbeddings } from '@langchain/openai';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Document as LangChainDocument } from 'langchain';
 import { Collection, Db } from 'mongodb';
 import { Connection } from 'mongoose';
 import mammoth from 'mammoth';
 import { PDFParse } from 'pdf-parse';
+import { LangchainService } from 'src/langchain/langchain.service';
+import type { VectorSearchHit } from 'src/langchain/types/langchain.types';
 import { TEXT_UPLOAD_EXTENSIONS } from './documents.service';
-
-type PrepareChunksInput = {
-  userId: string;
-  knowledgeBaseId: string;
-  documentId: string;
-  documentName: string;
-  extension: string;
-  content?: string;
-  file?: Express.Multer.File;
-};
-
-export type PreparedChunk = {
-  sequence: number;
-  content: string;
-  page?: number;
-  startIndex?: number;
-  endIndex?: number;
-};
-
-type SplitDocumentMetadata = {
-  page?: number;
-  loc?: {
-    pageNumber?: number;
-  };
-};
+import type {
+  PrepareChunksInput,
+  PreparedChunk,
+  SplitDocumentMetadata,
+} from './types/document-indexing.types';
 
 @Injectable()
 export class DocumentIndexingService {
   constructor(
-    private readonly configService: ConfigService,
+    private readonly langchainService: LangchainService,
     @InjectConnection() private readonly connection: Connection,
   ) {}
 
@@ -51,48 +31,15 @@ export class DocumentIndexingService {
   }
 
   private getVectorCollectionName(): string {
-    return (
-      this.configService.get<string>('MONGODB_VECTOR_COLLECTION') ||
-      'document_chunk_vectors'
-    );
+    return process.env.MONGODB_VECTOR_COLLECTION || 'document_chunk_vectors';
   }
 
   private getVectorIndexName(): string {
-    return (
-      this.configService.get<string>('MONGODB_VECTOR_INDEX') ||
-      'document_chunk_vector_index'
-    );
+    return process.env.MONGODB_VECTOR_INDEX || 'document_chunk_vector_index';
   }
 
   private getVectorCollection(): Collection {
     return this.db.collection(this.getVectorCollectionName());
-  }
-
-  private getEmbeddingBatchSize(): number {
-    const configuredBatchSize = this.configService.get<number>(
-      'OPENAI_EMBEDDING_BATCH_SIZE',
-    );
-
-    if (
-      typeof configuredBatchSize === 'number' &&
-      Number.isInteger(configuredBatchSize) &&
-      configuredBatchSize > 0
-    ) {
-      return Math.min(configuredBatchSize, 10);
-    }
-
-    return 10;
-  }
-
-  private createEmbeddings() {
-    return new OpenAIEmbeddings({
-      model: this.configService.get<string>('OPENAI_EMBEDDING_MODEL'),
-      apiKey: this.configService.get<string>('OPENAI_EMBEDDING_API_KEY'),
-      batchSize: this.getEmbeddingBatchSize(),
-      configuration: {
-        baseURL: this.configService.get<string>('OPENAI_EMBEDDING_BASE_URL'),
-      },
-    });
   }
 
   private async loadSourceDocuments(
@@ -268,9 +215,9 @@ export class DocumentIndexingService {
       return;
     }
 
-    const embeddings = await this.createEmbeddings().embedDocuments(
-      params.chunks.map((chunk) => chunk.content),
-    );
+    const embeddings = await this.langchainService
+      .createEmbeddings()
+      .embedDocuments(params.chunks.map((chunk) => chunk.content));
 
     await collection.insertMany(
       params.chunks.map((chunk, index) => {
@@ -316,10 +263,10 @@ export class DocumentIndexingService {
     knowledgeBaseId: string;
     question: string;
     topK: number;
-  }) {
-    const queryVector = await this.createEmbeddings().embedQuery(
-      params.question,
-    );
+  }): Promise<VectorSearchHit[]> {
+    const queryVector = await this.langchainService
+      .createEmbeddings()
+      .embedQuery(params.question);
 
     return this.getVectorCollection()
       .aggregate([
@@ -352,6 +299,6 @@ export class DocumentIndexingService {
           },
         },
       ])
-      .toArray();
+      .toArray() as Promise<VectorSearchHit[]>;
   }
 }

@@ -15,6 +15,7 @@ import { JwtAuthGuard } from './common/guard/jwt-auth.guard';
 import { UsersModule } from './users/users.module';
 import { KnowledgeBasesModule } from './knowledge_bases/knowledge_bases.module';
 import { DocumentsModule } from './documents/documents.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { DocumentsModule } from './documents/documents.module';
     UsersModule,
     KnowledgeBasesModule,
     DocumentsModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [

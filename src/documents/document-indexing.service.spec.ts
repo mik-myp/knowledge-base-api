@@ -1,6 +1,6 @@
-import { ConfigService } from '@nestjs/config';
 import { Document as LangChainDocument } from 'langchain';
 import type { Connection } from 'mongoose';
+import { LangchainService } from 'src/langchain/langchain.service';
 import { DocumentIndexingService } from './document-indexing.service';
 
 type InternalDocumentIndexingService = DocumentIndexingService & {
@@ -10,9 +10,6 @@ type InternalDocumentIndexingService = DocumentIndexingService & {
   splitDocuments: (
     documents: LangChainDocument<Record<string, unknown>>[],
   ) => Promise<LangChainDocument<Record<string, unknown>>[]>;
-  createEmbeddings: () => {
-    embedDocuments: (texts: string[]) => Promise<number[][]>;
-  };
 };
 
 describe('DocumentIndexingService', () => {
@@ -21,6 +18,7 @@ describe('DocumentIndexingService', () => {
     deleteMany: jest.Mock;
     insertMany: jest.Mock;
   };
+  let langchainService: jest.Mocked<Pick<LangchainService, 'createEmbeddings'>>;
 
   beforeEach(() => {
     collectionMock = {
@@ -28,19 +26,9 @@ describe('DocumentIndexingService', () => {
       insertMany: jest.fn().mockResolvedValue(undefined),
     };
 
-    const configService = {
-      get: jest.fn((key: string) => {
-        if (key === 'MONGODB_VECTOR_COLLECTION') {
-          return 'document_chunk_vectors';
-        }
-
-        if (key === 'MONGODB_VECTOR_INDEX') {
-          return 'document_chunk_vector_index';
-        }
-
-        return undefined;
-      }),
-    } as unknown as ConfigService;
+    langchainService = {
+      createEmbeddings: jest.fn(),
+    };
 
     const connection = {
       db: {
@@ -48,11 +36,18 @@ describe('DocumentIndexingService', () => {
       },
     } as unknown as Connection;
 
-    service = new DocumentIndexingService(configService, connection);
+    service = new DocumentIndexingService(
+      langchainService as unknown as LangchainService,
+      connection,
+    );
+    process.env.MONGODB_VECTOR_COLLECTION = 'document_chunk_vectors';
+    process.env.MONGODB_VECTOR_INDEX = 'document_chunk_vector_index';
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
+    delete process.env.MONGODB_VECTOR_COLLECTION;
+    delete process.env.MONGODB_VECTOR_INDEX;
   });
 
   it('calculates startIndex and endIndex for markdown-like documents', async () => {
@@ -174,11 +169,10 @@ describe('DocumentIndexingService', () => {
   });
 
   it('omits undefined optional fields when writing vector documents', async () => {
-    const internalService = service as InternalDocumentIndexingService;
-
-    jest.spyOn(internalService, 'createEmbeddings').mockReturnValue({
+    langchainService.createEmbeddings.mockReturnValue({
       embedDocuments: jest.fn().mockResolvedValue([[0.1], [0.2]]),
-    });
+      embedQuery: jest.fn(),
+    } as any);
 
     await service.replaceDocumentVectors({
       userId: 'user-id',

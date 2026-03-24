@@ -26,11 +26,11 @@ import { KnowledgeBasesService } from './knowledge_bases.service';
 import { CreateKnowledgeBaseDto } from './dto/create-knowledge_base.dto';
 import { ListKnowledgeBasesQueryDto } from './dto/list-knowledge-bases-query.dto';
 import { UpdateKnowledgeBaseDto } from './dto/update-knowledge_base.dto';
-import type { UserRequest } from '../users/users';
+import type { UserRequest } from '../users/types/users.types';
 import type {
   KnowledgeBaseListResult,
   KnowledgeBaseRecord,
-} from './knowledge_bases';
+} from './types/knowledge-bases.types';
 
 @ApiTags('knowledge-bases')
 @ApiBearerAuth()

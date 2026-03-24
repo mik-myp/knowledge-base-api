@@ -55,6 +55,9 @@
 - `chat_sessions`
 - `chat_messages`
 - `GET /chat/sessions`
+- `POST /chat/sessions`
+- `PATCH /chat/sessions/:id`
+- `DELETE /chat/sessions/:id`
 - `GET /chat/messages`
 - `POST /chat/ask`
 
@@ -137,17 +140,29 @@ AntDX(Sender / Bubble / Conversations)
 
 ### 4.1 `ChatSide -> Conversations`
 
-它需要的是“会话列表”。
+它需要的是“当前用户下的全部会话列表”和“会话管理动作”。
 
 所以后端至少要有：
 
-- `GET /chat/sessions?knowledgeBaseId=xxx`
+- `GET /chat/sessions`
+- `POST /chat/sessions`
+- `PATCH /chat/sessions/:id`
+- `DELETE /chat/sessions/:id`
 
 前端需要的字段很少：
 
 - `id`
 - `title`
 - `updatedAt`
+
+如果页面要在切回旧会话时顺手恢复当前上下文范围，响应里可以额外带：
+
+- `knowledgeBaseId`
+
+其中：
+
+- 有值表示这是某个知识库会话
+- `null` 表示这是普通 AI 会话
 
 然后前端自己映射：
 
@@ -190,6 +205,11 @@ AntDX(Sender / Bubble / Conversations)
 - `activeSessionId`
 - `draftMessage`
 
+这里的 `activeKnowledgeBaseId` 只负责“新建会话 / 首次提问”时决定问哪个知识库，  
+不应该再拿来当会话列表的查询条件。
+
+如果它为空，就表示这次要新开一个“普通 AI 会话”。
+
 后端至少要有：
 
 - `GET /knowledge-bases`
@@ -223,6 +243,10 @@ AntDX(Sender / Bubble / Conversations)
 - `chat_messages.sequence`
 - `chat_messages.sources`
 
+这里保留 `chat_sessions.knowledgeBaseId`，是为了固定单条会话的上下文范围。  
+有值表示知识库会话，为空表示普通 AI 会话。  
+它不是为了把左侧会话列表按知识库切开。
+
 ### 5.3 检索事实字段
 
 这些字段必须跟文档切片一起保留：
@@ -241,10 +265,10 @@ AntDX(Sender / Bubble / Conversations)
 
 ## 6. 推荐接口协议
 
-### 6.1 获取会话列表
+### 6.1 获取当前用户的会话列表
 
 ```http
-GET /chat/sessions?knowledgeBaseId=kb_1
+GET /chat/sessions
 ```
 
 响应：
@@ -257,13 +281,105 @@ GET /chat/sessions?knowledgeBaseId=kb_1
       "title": "RAG 回答为什么能显示来源",
       "knowledgeBaseId": "kb_1",
       "updatedAt": "2026-03-23T10:00:00.000Z"
+    },
+    {
+      "id": "session_2",
+      "title": "帮我整理这段需求说明",
+      "knowledgeBaseId": null,
+      "updatedAt": "2026-03-24T09:30:00.000Z"
     }
   ],
-  "total": 1
+  "total": 2
 }
 ```
 
-### 6.2 获取消息列表
+### 6.2 新增会话
+
+```http
+POST /chat/sessions
+Content-Type: application/json
+```
+
+新建知识库会话：
+
+```json
+{
+  "knowledgeBaseId": "kb_1"
+}
+```
+
+新建普通 AI 会话：
+
+```json
+{}
+```
+
+如果前端想先给一个标题，也可以传：
+
+```json
+{
+  "knowledgeBaseId": "kb_1",
+  "title": "RAG 问答"
+}
+```
+
+响应：
+
+```json
+{
+  "id": "session_3",
+  "title": "新会话",
+  "knowledgeBaseId": "kb_1",
+  "updatedAt": "2026-03-24T10:10:00.000Z"
+}
+```
+
+这个接口给“点击新增会话按钮”使用。  
+如果前端没有先建会话，`POST /chat/ask` 仍然可以兜底自动创建。
+
+### 6.3 会话重命名
+
+```http
+PATCH /chat/sessions/session_3
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "title": "RAG 来源解释"
+}
+```
+
+响应：
+
+```json
+{
+  "id": "session_3",
+  "title": "RAG 来源解释",
+  "knowledgeBaseId": "kb_1",
+  "updatedAt": "2026-03-24T10:12:00.000Z"
+}
+```
+
+这里只允许修改 `title`，不允许借重命名接口切换 `knowledgeBaseId`。
+
+### 6.4 删除会话
+
+```http
+DELETE /chat/sessions/session_3
+```
+
+响应：
+
+```http
+204 No Content
+```
+
+删除会话时，后端应该一并删除该会话下的 `chat_messages`。
+
+### 6.5 获取消息列表
 
 ```http
 GET /chat/messages?sessionId=session_1
@@ -301,20 +417,41 @@ GET /chat/messages?sessionId=session_1
 }
 ```
 
-### 6.3 单次问答
+### 6.6 单次问答
 
 ```http
 POST /chat/ask
 Content-Type: application/json
 ```
 
-请求体：
+继续已有会话时，请求体可以只有：
+
+```json
+{
+  "sessionId": "session_1",
+  "question": "RAG 回答为什么能显示来源？",
+  "topK": 5
+}
+```
+
+后端会从 `sessionId` 对应的会话里恢复固定上下文范围。  
+如果该会话的 `knowledgeBaseId` 为空，就走普通 AI 对话。
+
+如果是新建知识库会话，再额外传：
 
 ```json
 {
   "knowledgeBaseId": "kb_1",
-  "sessionId": "session_1",
   "question": "RAG 回答为什么能显示来源？",
+  "topK": 5
+}
+```
+
+如果是新建普通 AI 会话，只传问题即可：
+
+```json
+{
+  "question": "帮我整理这段需求说明",
   "topK": 5
 }
 ```
@@ -346,15 +483,16 @@ Content-Type: application/json
 推荐固定成下面这条链路：
 
 1. 校验当前用户
-2. 校验 `knowledgeBaseId` 归属
-3. 如果传了 `sessionId`，校验会话归属
-4. 如果没传 `sessionId`，创建 `chat_session`
+2. 如果传了 `sessionId`，校验会话归属，并从会话里取出固定的 `knowledgeBaseId`
+3. 如果没传 `sessionId` 且传了 `knowledgeBaseId`，校验知识库归属并创建知识库会话
+4. 如果没传 `sessionId`，也没传 `knowledgeBaseId`，创建普通 AI 会话
 5. 保存 `human` 消息
-6. 调 `DocumentIndexingService.semanticSearch()`
-7. 组装上下文和 prompt
-8. 调 LangChain chat model
-9. 保存 `ai` 消息和 `sources`
-10. 返回 `sessionId + answer + sources`
+6. 如果当前会话有 `knowledgeBaseId`，调 `DocumentIndexingService.semanticSearch()`
+7. 如果当前会话没有 `knowledgeBaseId`，直接走普通模型问答
+8. 组装上下文和 prompt
+9. 调 LangChain chat model
+10. 保存 `ai` 消息和 `sources`
+11. 返回 `sessionId + answer + sources`
 
 这里最重要的不是“能回答”，而是“回答和来源能闭环回到前端”。
 
@@ -362,14 +500,20 @@ Content-Type: application/json
 
 ## 8. 现阶段最重要的三个建模结论
 
-### 8.1 会话必须绑定知识库
+### 8.1 会话列表按用户维度拉取，但单个会话固定上下文范围
 
-不要做“一个会话里随时切知识库”的设计。
+左侧会话列表不要按 `knowledgeBaseId` 切开。
 
 正确方式：
 
-- 一条 `chat_session` 只对应一个 `knowledgeBaseId`
-- 用户切知识库，本质上就是切一个新的会话上下文
+- `GET /chat/sessions` 只返回当前用户的全部会话
+- 一条 `chat_session` 要么绑定一个 `knowledgeBaseId`，要么为空表示普通 AI 会话
+- `POST /chat/sessions` 用来显式新建空会话
+- `PATCH /chat/sessions/:id` 只允许改标题
+- `DELETE /chat/sessions/:id` 删除会话时要级联删消息
+- 用户点开旧会话时，由会话记录回填当前上下文范围
+- 用户切知识库时，新开一个新的知识库会话
+- 用户从知识库模式切到“不使用知识库”时，也新开一个普通 AI 会话
 
 ### 8.2 消息存 LangChain 语义，前端再映射 UI 语义
 
@@ -414,11 +558,19 @@ Content-Type: application/json
 这个文件应该升级成页面状态入口，至少负责：
 
 - 拉知识库列表
-- 拉会话列表
+- 拉当前用户全部会话列表
+- 创建会话
+- 删除会话
+- 重命名会话
 - 维护 `activeKnowledgeBaseId`
 - 维护 `activeSessionId`
 - 维护 `messages`
 - 把回调传给 `ChatSide`、`ChatList`、`ChatSender`
+
+其中 `activeKnowledgeBaseId` 是发送问题时的上下文状态，  
+不是左侧会话列表的筛选条件。
+
+它可以为空。为空时，表示当前准备创建普通 AI 会话。
 
 当前的占位代码需要改掉：
 
@@ -434,6 +586,8 @@ Content-Type: application/json
 - `conversations`
 - `activeConversationKey`
 - `onCreateConversation`
+- `onRenameConversation`
+- `onDeleteConversation`
 - `onChangeConversation`
 
 ### 9.3 `src/layouts/components/ChatList.tsx`
@@ -453,6 +607,7 @@ Content-Type: application/json
 
 - 输入问题
 - 显示知识库建议项
+- 支持“不使用知识库”
 - 提交时调用页面层的 `onSubmit`
 
 不应该自己持久化消息。
@@ -470,10 +625,13 @@ Content-Type: application/json
 顺序建议：
 
 1. 先实现 `GET /chat/sessions`
-2. 先实现 `GET /chat/messages`
-3. 先实现 `POST /chat/ask`
-4. 再让 `useXConversations` 接真实会话列表
-5. 再让 `useXChat` 接真实消息提交
+2. 先实现 `POST /chat/sessions`
+3. 先实现 `PATCH /chat/sessions/:id`
+4. 先实现 `DELETE /chat/sessions/:id`
+5. 先实现 `GET /chat/messages`
+6. 先实现 `POST /chat/ask`
+7. 再让 `useXConversations` 接真实会话列表
+8. 再让 `useXChat` 接真实消息提交
 
 ### 不推荐
 
@@ -527,10 +685,12 @@ AntDX + X SDK
       -> 文档检索与模型调用
 ```
 
-按当前真实仓库状态继续往下做，核心不是再重写文档索引，而是补齐这三块：
+按当前真实仓库状态继续往下做，核心不是再重写文档索引，而是补齐这些关键块：
 
 1. `chat_sessions`
 2. `chat_messages`
-3. `/chat/sessions`、`/chat/messages`、`/chat/ask`
+3. `/chat/sessions` 的增删改查
+4. `/chat/messages`
+5. `/chat/ask`
 
-只要这三块补上，前端现有 AI 页面就能从演示骨架进入真正可用状态。
+只要这些关键块补上，前端现有 AI 页面就能从演示骨架进入真正可用状态。

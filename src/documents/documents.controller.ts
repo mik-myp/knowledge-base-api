@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { DocumentsService } from './documents.service';
 
-import type { UserRequest } from 'src/users/users';
+import type { UserRequest } from 'src/users/types/users.types';
 import { UploadDocumentDto } from './dto/upload-document.dto';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { ListDocumentsQueryDto } from './dto/list-documents-query.dto';

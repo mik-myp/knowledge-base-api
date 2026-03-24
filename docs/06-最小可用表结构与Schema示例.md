@@ -28,6 +28,7 @@ export class KnowledgeBase {
 - 知识库下拉列表
 - 文档上传归属
 - 会话绑定知识库
+- 普通 AI 会话与知识库会话并存
 
 ---
 
@@ -175,10 +176,10 @@ export class ChatSession {
   @Prop({
     type: Types.ObjectId,
     ref: 'KnowledgeBase',
-    required: true,
+    default: null,
     index: true,
   })
-  knowledgeBaseId: Types.ObjectId;
+  knowledgeBaseId?: Types.ObjectId | null;
 
   @Prop({ type: String, required: true, trim: true, maxLength: 200 })
   title: string;
@@ -186,7 +187,6 @@ export class ChatSession {
 
 export const ChatSessionSchema = SchemaFactory.createForClass(ChatSession);
 
-ChatSessionSchema.index({ userId: 1, knowledgeBaseId: 1, updatedAt: -1 });
 ChatSessionSchema.index({ userId: 1, updatedAt: -1 });
 ```
 
@@ -195,6 +195,13 @@ ChatSessionSchema.index({ userId: 1, updatedAt: -1 });
 - `Conversations` 组件最终只需要 `id + title + updatedAt`
 - `group` 用 `updatedAt` 算
 - `activeKey` 是前端状态，不落库
+- `knowledgeBaseId` 有值表示知识库会话，为空表示普通 AI 会话
+
+配套行为建议固定：
+
+- `POST /chat/sessions` 新建空会话
+- `PATCH /chat/sessions/:id` 只改 `title`
+- `DELETE /chat/sessions/:id` 时级联删除该会话下的消息
 
 ---
 
@@ -223,10 +230,10 @@ export class ChatMessage {
   @Prop({
     type: Types.ObjectId,
     ref: 'KnowledgeBase',
-    required: true,
+    default: null,
     index: true,
   })
-  knowledgeBaseId: Types.ObjectId;
+  knowledgeBaseId?: Types.ObjectId | null;
 
   @Prop({
     type: Types.ObjectId,
@@ -266,7 +273,6 @@ export const ChatMessageSchema = SchemaFactory.createForClass(ChatMessage);
 
 ChatMessageSchema.index({ sessionId: 1, sequence: 1 }, { unique: true });
 ChatMessageSchema.index({ userId: 1, sessionId: 1, createdAt: 1 });
-ChatMessageSchema.index({ knowledgeBaseId: 1, sessionId: 1 });
 ```
 
 为什么不用前端的 `user/assistant` 直接落库：
@@ -274,6 +280,7 @@ ChatMessageSchema.index({ knowledgeBaseId: 1, sessionId: 1 });
 - 后端要和 LangChain 消息类型对齐
 - 前端展示时再把 `human -> user`、`ai -> assistant`
 - 这样数据库更稳定，前端组件怎么换都不影响后端事实表
+- `knowledgeBaseId` 只是当前会话上下文快照，普通 AI 会话时为空
 
 ---
 
@@ -285,7 +292,7 @@ ChatMessageSchema.index({ knowledgeBaseId: 1, sessionId: 1 });
 export type ChatSessionListItemDto = {
   id: string;
   title: string;
-  knowledgeBaseId: string;
+  knowledgeBaseId: string | null;
   updatedAt: string;
 };
 ```
@@ -300,7 +307,32 @@ const items = dataList.map((item) => ({
 }));
 ```
 
-### 7.2 消息列表 DTO
+### 7.2 新增会话 DTO
+
+```ts
+export type CreateChatSessionDto = {
+  knowledgeBaseId?: string;
+  title?: string;
+};
+```
+
+建议：
+
+- `knowledgeBaseId` 不传表示普通 AI 会话
+- `title` 不传时，后端默认使用 `新会话`
+
+### 7.3 会话重命名 DTO
+
+```ts
+export type RenameChatSessionDto = {
+  title: string;
+};
+```
+
+这里不要允许改 `knowledgeBaseId`。  
+会话上下文范围一旦创建就固定。
+
+### 7.4 消息列表 DTO
 
 ```ts
 export type ChatMessageListItemDto = {

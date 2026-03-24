@@ -25,6 +25,11 @@ import {
   DocumentChunkDocument,
 } from './schemas/document_chunks.schema';
 import { DocumentIndexingService } from './document-indexing.service';
+import type {
+  CreatedDocumentCleanupTarget,
+  RemoveByDocumentIdsResult,
+  UploadSingleFileResult,
+} from './types/documents.types';
 
 const SUPPORTED_UPLOAD_EXTENSIONS = new Set([
   'pdf',
@@ -36,21 +41,6 @@ const SUPPORTED_UPLOAD_EXTENSIONS = new Set([
 ]);
 
 export const TEXT_UPLOAD_EXTENSIONS = new Set(['md', 'markdown', 'txt']);
-
-type RemoveByDocumentIdsResult = {
-  deletedCount: number;
-  deletedIds: string[];
-};
-
-type CreatedDocumentCleanupTarget = {
-  documentId?: string;
-  storageKey?: string;
-};
-
-type UploadSingleFileResult = {
-  cleanupTarget: CreatedDocumentCleanupTarget;
-  serializedDocument: unknown;
-};
 
 @Injectable()
 export class DocumentsService {
