@@ -27,6 +27,9 @@ import {
   ChatMessageDocument,
 } from 'src/chat/schemas/chat_message.schema';
 
+/**
+ * 负责知识库Bases相关业务处理的服务。
+ */
 @Injectable()
 export class KnowledgeBasesService {
   constructor(
@@ -41,6 +44,11 @@ export class KnowledgeBasesService {
     private readonly documentsService: DocumentsService,
   ) {}
 
+  /**
+   * 序列化知识库基础。
+   * @param knowledgeBase 知识库基础。
+   * @returns 返回知识库基础记录。
+   */
   private serializeKnowledgeBase(
     knowledgeBase: KnowledgeBaseDocument,
   ): KnowledgeBaseRecord {
@@ -52,6 +60,12 @@ export class KnowledgeBasesService {
     };
   }
 
+  /**
+   * 创建相关逻辑。
+   * @param userId 当前用户 ID。
+   * @param createKnowledgeBaseDto 创建知识库请求参数。
+   * @returns 返回 Promise，解析后得到知识库基础记录。
+   */
   async create(
     userId: string,
     createKnowledgeBaseDto: CreateKnowledgeBaseDto,
@@ -67,6 +81,12 @@ export class KnowledgeBasesService {
     return this.serializeKnowledgeBase(newKnowledgeBase);
   }
 
+  /**
+   * 查询All。
+   * @param userId 当前用户 ID。
+   * @param query 查询参数对象。
+   * @returns 返回 Promise，解析后得到知识库基础列表结果或知识库基础Record[]。
+   */
   async findAll(
     userId: string,
     query: ListKnowledgeBasesQueryDto,
@@ -102,6 +122,12 @@ export class KnowledgeBasesService {
     );
   }
 
+  /**
+   * 查询One。
+   * @param userId 当前用户 ID。
+   * @param id 资源 ID。
+   * @returns 返回 Promise，解析后得到知识库基础记录。
+   */
   async findOne(userId: string, id: string): Promise<KnowledgeBaseRecord> {
     const userObjectId = toObjectId(userId);
     const knowledgeBaseObjectId = toObjectId(id);
@@ -116,6 +142,13 @@ export class KnowledgeBasesService {
     return this.serializeKnowledgeBase(knowledgeBase);
   }
 
+  /**
+   * 更新相关逻辑。
+   * @param userId 当前用户 ID。
+   * @param id 资源 ID。
+   * @param updateKnowledgeBaseDto 更新知识库请求参数。
+   * @returns 返回 Promise，解析后得到知识库基础记录。
+   */
   async update(
     userId: string,
     id: string,
@@ -141,6 +174,12 @@ export class KnowledgeBasesService {
     return this.serializeKnowledgeBase(knowledgeBase);
   }
 
+  /**
+   * 删除相关逻辑。
+   * @param userId 当前用户 ID。
+   * @param id 资源 ID。
+   * @returns 返回 Promise，解析后得到知识库基础记录。
+   */
   async remove(userId: string, id: string): Promise<KnowledgeBaseRecord> {
     const userObjectId = toObjectId(userId);
     const knowledgeBaseObjectId = toObjectId(id);

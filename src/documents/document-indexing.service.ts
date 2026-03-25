@@ -21,8 +21,14 @@ import type {
   SplitDocumentMetadata,
 } from './types/document-indexing.types';
 
+/**
+ * 负责文档分片、向量写入和语义检索的服务。
+ */
 @Injectable()
 export class DocumentIndexingService {
+  /**
+   * 记录文档索引流程中的诊断日志。
+   */
   private readonly logger = new Logger(DocumentIndexingService.name);
 
   constructor(
@@ -31,6 +37,10 @@ export class DocumentIndexingService {
     @InjectConnection() private readonly connection: Connection,
   ) {}
 
+  /**
+   * 获取当前 Mongoose 连接对应的 MongoDB 数据库实例。
+   * @returns 返回已连接的 MongoDB 数据库对象。
+   */
   private get db(): Db {
     if (!this.connection.db) {
       throw new Error('Mongo connection is not ready');
@@ -39,14 +49,28 @@ export class DocumentIndexingService {
     return this.connection.db;
   }
 
+  /**
+   * 获取向量集合名称。
+   * @returns 返回向量数据所在的集合名称。
+   */
   private getVectorCollectionName(): string {
     return process.env.MONGODB_VECTOR_COLLECTION || 'document_chunk_vectors';
   }
 
+  /**
+   * 获取向量索引名称。
+   * @returns 返回 MongoDB 向量检索索引名称。
+   */
   private getVectorIndexName(): string {
     return process.env.MONGODB_VECTOR_INDEX || 'document_chunk_vector_index';
   }
 
+  /**
+   * 读取指定阶段的超时配置。
+   * @param key 配置项名称。
+   * @param fallback 未配置时使用的默认超时时间。
+   * @returns 返回最终生效的超时毫秒数。
+   */
   private getStageTimeoutMs(
     key: 'EMBED_QUERY_TIMEOUT_MS' | 'VECTOR_SEARCH_TIMEOUT_MS',
     fallback: number,
@@ -64,14 +88,29 @@ export class DocumentIndexingService {
     return fallback;
   }
 
+  /**
+   * 获取问题向量生成阶段的超时时间。
+   * @returns 返回问题向量生成的超时毫秒数。
+   */
   private getEmbedQueryTimeoutMs(): number {
     return this.getStageTimeoutMs('EMBED_QUERY_TIMEOUT_MS', 12000);
   }
 
+  /**
+   * 获取向量检索阶段的超时时间。
+   * @returns 返回向量检索的超时毫秒数。
+   */
   private getVectorSearchTimeoutMs(): number {
     return this.getStageTimeoutMs('VECTOR_SEARCH_TIMEOUT_MS', 8000);
   }
 
+  /**
+   * 为异步任务增加超时保护。
+   * @param task 需要执行的异步任务。
+   * @param timeoutMs 超时时间，单位为毫秒。
+   * @param errorMessage 超时后抛出的错误提示。
+   * @returns 返回任务结果；若超时则抛出网关超时异常。
+   */
   private async withTimeout<T>(
     task: Promise<T>,
     timeoutMs: number,
@@ -95,10 +134,19 @@ export class DocumentIndexingService {
     }
   }
 
+  /**
+   * 获取存放文档向量的 MongoDB 集合。
+   * @returns 返回向量集合实例。
+   */
   private getVectorCollection(): Collection {
     return this.db.collection(this.getVectorCollectionName());
   }
 
+  /**
+   * 将原始上传内容转换为 LangChain 文档对象。
+   * @param params 文档分片准备参数。
+   * @returns 返回后续分片步骤使用的 LangChain 文档数组。
+   */
   private async loadSourceDocuments(
     params: PrepareChunksInput,
   ): Promise<LangChainDocument[]> {
@@ -171,6 +219,11 @@ export class DocumentIndexingService {
     throw new BadRequestException(`不支持的扩展名: ${params.extension}`);
   }
 
+  /**
+   * 按固定策略拆分文档内容。
+   * @param documents 需要拆分的 LangChain 文档列表。
+   * @returns 返回拆分后的文档片段列表。
+   */
   private async splitDocuments(documents: LangChainDocument[]) {
     const splitter = new RecursiveCharacterTextSplitter({
       chunkSize: 1000,
@@ -180,6 +233,11 @@ export class DocumentIndexingService {
     return splitter.splitDocuments(documents);
   }
 
+  /**
+   * 从分片元数据中提取页码信息。
+   * @param metadata LangChain 分片附带的元数据。
+   * @returns 返回页码；若不存在则返回 `undefined`。
+   */
   private extractPageFromMetadata(
     metadata: SplitDocumentMetadata,
   ): number | undefined {
@@ -194,6 +252,13 @@ export class DocumentIndexingService {
     return undefined;
   }
 
+  /**
+   * 为单个源文档构建可持久化的分片数据。
+   * @param sourceText 源文档完整文本。
+   * @param splitDocuments 拆分后的 LangChain 文档片段。
+   * @param sequenceStart 当前文档片段的起始序号。
+   * @returns 返回写入数据库前使用的分片结构列表。
+   */
   private buildPreparedChunksForSourceDocument(
     sourceText: string,
     splitDocuments: LangChainDocument[],
@@ -235,6 +300,11 @@ export class DocumentIndexingService {
     }, []);
   }
 
+  /**
+   * 生成文档分片数据。
+   * @param params 文档分片准备参数。
+   * @returns 返回可用于写入数据库和向量库的分片列表。
+   */
   async prepareChunks(params: PrepareChunksInput): Promise<PreparedChunk[]> {
     const sourceDocuments = await this.loadSourceDocuments(params);
     const chunks: PreparedChunk[] = [];
@@ -254,6 +324,16 @@ export class DocumentIndexingService {
     return chunks;
   }
 
+  /**
+   * 替换文档Vectors。
+   * @param params 参数对象。
+   * @param params.userId 当前用户 ID。
+   * @param params.knowledgeBaseId 知识库 ID。
+   * @param params.documentId 文档 ID。
+   * @param params.documentName 文档Name。
+   * @param params.chunks 分片数据列表。
+   * @returns 返回 Promise，完成后无额外返回值。
+   */
   async replaceDocumentVectors(params: {
     userId: string;
     knowledgeBaseId: string;
@@ -305,6 +385,12 @@ export class DocumentIndexingService {
     );
   }
 
+  /**
+   * 删除文档已有的向量索引。
+   * @param userId 当前用户 ID。
+   * @param documentId 文档 ID。
+   * @returns 删除完成后不返回额外内容。
+   */
   async deleteDocumentVectors(
     userId: string,
     documentId: string,
@@ -315,6 +401,16 @@ export class DocumentIndexingService {
     });
   }
 
+  /**
+   * 在指定知识库内执行语义检索。
+   * @param params 检索参数。
+   * @param params.userId 当前用户 ID。
+   * @param params.knowledgeBaseId 目标知识库 ID。
+   * @param params.question 用户提出的问题。
+   * @param params.topK 需要返回的最相关分片数量。
+   * @param params.onProgress 可选的阶段回调，用于向外部报告检索进度。
+   * @returns 返回按相关度排序的检索命中结果。
+   */
   async semanticSearch(params: {
     userId: string;
     knowledgeBaseId: string;

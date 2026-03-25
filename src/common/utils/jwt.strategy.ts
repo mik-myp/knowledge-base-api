@@ -8,8 +8,14 @@ import {
   type AuthenticatedUser,
 } from '../../users/types/users.types';
 
+/**
+ * 负责 accessToken 解析与用户身份校验的策略。
+ */
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  /**
+   * 记录 JWT 策略初始化和校验过程的日志。
+   */
   private readonly logger = new Logger(JwtStrategy.name);
 
   constructor(
@@ -35,6 +41,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
   }
 
+  /**
+   * 校验 JWT 载荷并返回认证用户信息。
+   * @param payload JWT 解码后的载荷数据。
+   * @returns 返回可挂载到请求对象上的认证用户信息。
+   */
   async validate(payload: unknown): Promise<AuthenticatedUser> {
     if (!isJwtTokenPayload(payload) || payload.tokenType !== 'access') {
       throw new UnauthorizedException('accessToken 无效');

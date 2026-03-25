@@ -1,8 +1,15 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { API_CONSTRAINTS } from 'src/contracts/api-contracts';
 
+/**
+ * 定义列表知识库Bases查询参数的 DTO 结构。
+ */
 export class ListKnowledgeBasesQueryDto {
+  /**
+   * 保存页码。
+   */
   @ApiPropertyOptional({
     description: '页码',
     example: 1,
@@ -10,9 +17,14 @@ export class ListKnowledgeBasesQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'page 必须是整数' })
-  @Min(1, { message: 'page 不能小于 1' })
+  @Min(API_CONSTRAINTS.knowledgeBase.pageMin, {
+    message: 'page 不能小于 1',
+  })
   page?: number;
 
+  /**
+   * 保存每页数量。
+   */
   @ApiPropertyOptional({
     description: '每页数量',
     example: 10,
@@ -21,7 +33,11 @@ export class ListKnowledgeBasesQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'pageSize 必须是整数' })
-  @Min(1, { message: 'pageSize 不能小于 1' })
-  @Max(50, { message: 'pageSize 不能大于 50' })
+  @Min(API_CONSTRAINTS.knowledgeBase.pageSizeMin, {
+    message: 'pageSize 不能小于 1',
+  })
+  @Max(API_CONSTRAINTS.knowledgeBase.pageSizeMax, {
+    message: 'pageSize 不能大于 50',
+  })
   pageSize?: number;
 }

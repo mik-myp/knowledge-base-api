@@ -11,6 +11,9 @@ import {
 import { DocumentsModule } from 'src/documents/documents.module';
 import { LangchainModule } from 'src/langchain/langchain.module';
 
+/**
+ * 组织对话相关依赖的模块。
+ */
 @Module({
   imports: [
     DocumentsModule,

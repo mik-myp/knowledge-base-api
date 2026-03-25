@@ -32,6 +32,9 @@ import type {
   UploadSingleFileResult,
 } from './types/documents.types';
 
+/**
+ * 记录系统允许上传的文档扩展名集合。
+ */
 const SUPPORTED_UPLOAD_EXTENSIONS = new Set([
   'pdf',
   'doc',
@@ -41,8 +44,14 @@ const SUPPORTED_UPLOAD_EXTENSIONS = new Set([
   'txt',
 ]);
 
+/**
+ * 记录可以直接按文本内容解析的扩展名集合。
+ */
 export const TEXT_UPLOAD_EXTENSIONS = new Set(['md', 'markdown', 'txt']);
 
+/**
+ * 负责文档相关业务处理的服务。
+ */
 @Injectable()
 export class DocumentsService {
   constructor(
@@ -56,10 +65,20 @@ export class DocumentsService {
     private readonly documentIndexingService: DocumentIndexingService,
   ) {}
 
+  /**
+   * 统计字符串中的扩展拉丁字符数量。
+   * @param value 需要统计的字符串。
+   * @returns 返回匹配到的扩展拉丁字符个数。
+   */
   private countExtendedLatinCharacters(value: string): number {
     return (value.match(/[\u0080-\u00FF]/g) ?? []).length;
   }
 
+  /**
+   * 尝试修正上传文件名的乱码编码。
+   * @param originalName 原始文件名。
+   * @returns 返回更适合作为展示名称的文件名。
+   */
   private normalizeOriginalName(originalName: string): string {
     if (!/[\u0080-\u00FF]/.test(originalName)) {
       return originalName;
@@ -84,6 +103,12 @@ export class DocumentsService {
       : originalName;
   }
 
+  /**
+   * 校验知识库访问权限。
+   * @param userId 当前用户 ID。
+   * @param knowledgeBaseId 知识库 ID。
+   * @returns 返回 Promise，完成后无额外返回值。
+   */
   private async ensureKnowledgeBaseAccess(
     userId: string,
     knowledgeBaseId: string,
@@ -104,6 +129,12 @@ export class DocumentsService {
     }
   }
 
+  /**
+   * 查询当前用户拥有的文档。
+   * @param userId 当前用户 ID。
+   * @param id 文档 ID。
+   * @returns 返回当前用户可访问的文档记录。
+   */
   private async findOwnedDocument(userId: string, id: string) {
     const userObjectId = toObjectId(userId);
     const documentObjectId = toObjectId(id);
@@ -122,6 +153,12 @@ export class DocumentsService {
     return document;
   }
 
+  /**
+   * 构建文档列表查询条件。
+   * @param userId 当前用户 ID。
+   * @param query 文档列表查询参数。
+   * @returns 返回可直接传给 MongoDB 的筛选条件对象。
+   */
   private buildDocumentFilters(
     userId: string,
     query: ListDocumentsQueryDto,
@@ -144,6 +181,11 @@ export class DocumentsService {
     return filters;
   }
 
+  /**
+   * 构建文档列表聚合管道。
+   * @param filters 文档筛选条件。
+   * @returns 返回文档列表查询使用的聚合管道。
+   */
   private buildFindAllDocumentsPipeline(
     filters: Record<string, unknown>,
   ): PipelineStage[] {
@@ -170,10 +212,21 @@ export class DocumentsService {
     ];
   }
 
+  /**
+   * 提取文件扩展名。
+   * @param originalName 原始文件名。
+   * @returns 返回小写扩展名，缺失时返回 `other`。
+   */
   private getFileExtension(originalName: string): string {
     return originalName.split('.').pop()?.toLowerCase() || 'other';
   }
 
+  /**
+   * 生成下载时使用的文件名。
+   * @param originalName 文档原始名称。
+   * @param extension 文档扩展名。
+   * @returns 返回补齐扩展名后的文件名。
+   */
   private buildDownloadFileName(
     originalName: string,
     extension: string,
@@ -190,6 +243,11 @@ export class DocumentsService {
       : `${trimmedOriginalName}.${normalizedExtension}`;
   }
 
+  /**
+   * 校验上传扩展名是否受支持。
+   * @param extension 待校验的文件扩展名。
+   * @returns 校验通过时不返回额外内容。
+   */
   private assertSupportedUploadExtension(extension: string): void {
     if (!SUPPORTED_UPLOAD_EXTENSIONS.has(extension)) {
       throw new BadRequestException(
@@ -198,6 +256,11 @@ export class DocumentsService {
     }
   }
 
+  /**
+   * 校验在未配置对象存储时该扩展名是否允许上传。
+   * @param extension 待校验的文件扩展名。
+   * @returns 校验通过时不返回额外内容。
+   */
   private assertUploadCanProceedWithoutStorage(extension: string): void {
     if (
       !this.storageService.isConfigured() &&
@@ -209,6 +272,14 @@ export class DocumentsService {
     }
   }
 
+  /**
+   * 用新的分片内容替换文档已有分片。
+   * @param userId 当前用户 ID。
+   * @param knowledgeBaseId 知识库 ID。
+   * @param documentId 文档 ID。
+   * @param chunks 需要写入的分片数据列表。
+   * @returns 分片替换完成后不返回额外内容。
+   */
   private async replaceDocumentChunks(
     userId: string,
     knowledgeBaseId: string,
@@ -270,6 +341,12 @@ export class DocumentsService {
     await this.documentChunkModel.insertMany(payload);
   }
 
+  /**
+   * 删除文档对应的全部分片记录。
+   * @param userId 当前用户 ID。
+   * @param documentId 文档 ID。
+   * @returns 删除完成后不返回额外内容。
+   */
   private async deleteDocumentChunks(userId: string, documentId: string) {
     await this.documentChunkModel
       .deleteMany({
@@ -279,6 +356,12 @@ export class DocumentsService {
       .exec();
   }
 
+  /**
+   * 删除文档的分片索引和向量索引。
+   * @param userId 当前用户 ID。
+   * @param documentId 文档 ID。
+   * @returns 索引清理完成后不返回额外内容。
+   */
   private async removeDocumentIndex(userId: string, documentId: string) {
     await this.deleteDocumentChunks(userId, documentId);
     await this.documentIndexingService.deleteDocumentVectors(
@@ -287,6 +370,12 @@ export class DocumentsService {
     );
   }
 
+  /**
+   * 删除Created文档记录。
+   * @param userId 当前用户 ID。
+   * @param documentId 文档 ID。
+   * @returns 返回 Promise，完成后无额外返回值。
+   */
   private async deleteCreatedDocumentRecord(
     userId: string,
     documentId: string,
@@ -299,6 +388,12 @@ export class DocumentsService {
       .exec();
   }
 
+  /**
+   * 回滚单个已创建文档的存储和索引数据。
+   * @param userId 当前用户 ID。
+   * @param target 需要清理的文档记录、索引和存储对象信息。
+   * @returns 回滚完成后不返回额外数据。
+   */
   private async rollbackCreatedDocument(
     userId: string,
     target: CreatedDocumentCleanupTarget,
@@ -338,6 +433,12 @@ export class DocumentsService {
     }
   }
 
+  /**
+   * 批量回滚一组已创建文档。
+   * @param userId 当前用户 ID。
+   * @param targets 需要依次清理的文档目标列表。
+   * @returns 回滚完成后不返回额外数据。
+   */
   private async rollbackCreatedDocuments(
     userId: string,
     targets: CreatedDocumentCleanupTarget[],
@@ -360,6 +461,18 @@ export class DocumentsService {
     }
   }
 
+  /**
+   * 同步重建文档的分片索引和向量索引。
+   * @param params 索引构建参数。
+   * @param params.userId 当前用户 ID。
+   * @param params.knowledgeBaseId 知识库 ID。
+   * @param params.documentId 文档 ID。
+   * @param params.documentName 文档名称。
+   * @param params.extension 文档扩展名。
+   * @param params.content 纯文本内容，文本类文件时可直接提供。
+   * @param params.file 原始上传文件，二进制解析场景下使用。
+   * @returns 索引同步完成后不返回额外数据。
+   */
   private async syncDocumentIndex(params: {
     userId: string;
     knowledgeBaseId: string;
@@ -387,6 +500,13 @@ export class DocumentsService {
     });
   }
 
+  /**
+   * 上传单个文件并建立索引。
+   * @param userId 当前用户 ID。
+   * @param file 单个上传文件。
+   * @param uploadDocument 上传参数，包含知识库归属信息。
+   * @returns 返回单个文件上传后的清理信息和序列化文档结果。
+   */
   private async uploadSingleFile(
     userId: string,
     file: Express.Multer.File,
@@ -457,6 +577,13 @@ export class DocumentsService {
     }
   }
 
+  /**
+   * 批量上传文件并为每个文档建立索引。
+   * @param userId 当前用户 ID。
+   * @param files 上传的文件列表。
+   * @param uploadDocument 上传参数，包含目标知识库 ID。
+   * @returns 返回上传成功后的文档记录列表。
+   */
   async upload(
     userId: string,
     files: Array<Express.Multer.File>,
@@ -507,6 +634,12 @@ export class DocumentsService {
     }
   }
 
+  /**
+   * 创建在线编辑文档并建立索引。
+   * @param userId 当前用户 ID。
+   * @param editorDocument 编辑器文档内容和所属知识库信息。
+   * @returns 返回新建后的文档记录。
+   */
   async createEditorDocument(
     userId: string,
     editorDocument: CreateEditorDocumentDto,
@@ -554,6 +687,12 @@ export class DocumentsService {
     }
   }
 
+  /**
+   * 分页查询文档列表。
+   * @param userId 当前用户 ID。
+   * @param query 文档列表查询参数。
+   * @returns 返回文档列表和总数。
+   */
   async findAll(userId: string, query: ListDocumentsQueryDto) {
     const { page = 1, pageSize = 10 } = query;
     const skip = (page - 1) * pageSize;
@@ -599,11 +738,23 @@ export class DocumentsService {
     };
   }
 
+  /**
+   * 查询单个文档详情。
+   * @param userId 当前用户 ID。
+   * @param id 文档 ID。
+   * @returns 返回序列化后的文档详情。
+   */
   async findOne(userId: string, id: string) {
     const document = await this.findOwnedDocument(userId, id);
     return serializeMongoResult(document);
   }
 
+  /**
+   * 获取文档原始文件的下载内容。
+   * @param userId 当前用户 ID。
+   * @param id 文档 ID。
+   * @returns 返回下载所需的文件名、媒体类型和二进制内容。
+   */
   async download(userId: string, id: string): Promise<DocumentDownloadResult> {
     const document = await this.findOwnedDocument(userId, id);
     const fileName = this.buildDownloadFileName(
@@ -637,6 +788,12 @@ export class DocumentsService {
     throw new NotFoundException('原文件不存在');
   }
 
+  /**
+   * 删除单个文档及其索引。
+   * @param userId 当前用户 ID。
+   * @param id 文档 ID。
+   * @returns 返回被删除的文档记录。
+   */
   async remove(userId: string, id: string) {
     const userObjectId = toObjectId(userId);
     const documentObjectId = toObjectId(id);
@@ -660,6 +817,12 @@ export class DocumentsService {
     return serializeMongoResult(document.toObject());
   }
 
+  /**
+   * 按文档 ID 列表批量删除文档。
+   * @param userId 当前用户 ID。
+   * @param documentIds 需要删除的文档 ID 列表。
+   * @returns 返回删除数量和成功删除的文档 ID 列表。
+   */
   async removeByDocumentIds(
     userId: string,
     documentIds: string[],

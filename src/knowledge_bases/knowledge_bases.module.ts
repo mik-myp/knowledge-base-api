@@ -20,6 +20,9 @@ import {
   ChatMessageSchema,
 } from 'src/chat/schemas/chat_message.schema';
 
+/**
+ * 组织知识库Bases相关依赖的模块。
+ */
 @Module({
   imports: [
     DocumentsModule,

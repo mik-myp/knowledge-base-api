@@ -32,12 +32,21 @@ import type {
   KnowledgeBaseRecord,
 } from './types/knowledge-bases.types';
 
+/**
+ * 负责知识库Bases相关接口处理的控制器。
+ */
 @ApiTags('knowledge-bases')
 @ApiBearerAuth()
 @Controller('knowledge-bases')
 export class KnowledgeBasesController {
   constructor(private readonly knowledgeBasesService: KnowledgeBasesService) {}
 
+  /**
+   * 创建相关逻辑。
+   * @param req 请求对象。
+   * @param createKnowledgeBaseDto 创建知识库请求参数。
+   * @returns 返回 Promise，解析后得到知识库基础记录。
+   */
   @Post()
   @ApiOperation({ summary: '创建知识库' })
   @ApiBody({ type: CreateKnowledgeBaseDto })
@@ -53,6 +62,12 @@ export class KnowledgeBasesController {
     );
   }
 
+  /**
+   * 查询All。
+   * @param req 请求对象。
+   * @param query 查询参数对象。
+   * @returns 返回 Promise，解析后得到知识库基础列表结果或知识库基础Record[]。
+   */
   @Get()
   @ApiOperation({ summary: '获取当前用户的知识库列表' })
   @ApiQuery({
@@ -76,6 +91,12 @@ export class KnowledgeBasesController {
     return this.knowledgeBasesService.findAll(req.user.userId, query);
   }
 
+  /**
+   * 查询One。
+   * @param req 请求对象。
+   * @param id 资源 ID。
+   * @returns 返回 Promise，解析后得到知识库基础记录。
+   */
   @Get(':id')
   @ApiOperation({ summary: '获取当前用户的单个知识库详情' })
   @ApiParam({ name: 'id', description: '知识库 ID' })
@@ -90,6 +111,13 @@ export class KnowledgeBasesController {
     return this.knowledgeBasesService.findOne(req.user.userId, id);
   }
 
+  /**
+   * 更新相关逻辑。
+   * @param req 请求对象。
+   * @param id 资源 ID。
+   * @param updateKnowledgeBaseDto 更新知识库请求参数。
+   * @returns 返回 Promise，解析后得到知识库基础记录。
+   */
   @Patch(':id')
   @ApiOperation({ summary: '更新当前用户的知识库信息' })
   @ApiParam({ name: 'id', description: '知识库 ID' })
@@ -110,6 +138,12 @@ export class KnowledgeBasesController {
     );
   }
 
+  /**
+   * 删除相关逻辑。
+   * @param req 请求对象。
+   * @param id 资源 ID。
+   * @returns 返回 Promise，解析后得到知识库基础记录。
+   */
   @Delete(':id')
   @ApiOperation({ summary: '删除当前用户的知识库' })
   @ApiParam({ name: 'id', description: '知识库 ID' })

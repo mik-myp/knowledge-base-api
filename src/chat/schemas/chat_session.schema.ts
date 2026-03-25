@@ -1,17 +1,26 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 
+/**
+ * 定义对话会话文档的类型结构。
+ */
 export type ChatSessionDocument = HydratedDocument<ChatSession> & {
   updatedAt: Date;
   createdAt: Date;
 };
 
+/**
+ * 定义对话会话相关逻辑。
+ */
 @Schema({
   collection: 'chat_sessions',
   timestamps: true,
   versionKey: false,
 })
 export class ChatSession {
+  /**
+   * 保存当前用户 ID。
+   */
   @Prop({
     type: Types.ObjectId,
     ref: 'User',
@@ -20,6 +29,9 @@ export class ChatSession {
   })
   userId: Types.ObjectId;
 
+  /**
+   * 保存知识库 ID。
+   */
   @Prop({
     type: Types.ObjectId,
     ref: 'KnowledgeBase',
@@ -27,6 +39,9 @@ export class ChatSession {
   })
   knowledgeBaseId: Types.ObjectId;
 
+  /**
+   * 保存标题。
+   */
   @Prop({
     type: String,
     required: true,
@@ -35,4 +50,7 @@ export class ChatSession {
   title: string;
 }
 
+/**
+ * 定义对话会话Schema。
+ */
 export const ChatSessionSchema = SchemaFactory.createForClass(ChatSession);

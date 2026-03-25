@@ -45,8 +45,14 @@ import {
   type SerializedChatSession,
 } from './types/chat.types';
 
+/**
+ * 负责对话相关业务处理的服务。
+ */
 @Injectable()
 export class ChatService {
+  /**
+   * 记录对话生成过程中的关键日志。
+   */
   private readonly logger = new Logger(ChatService.name);
 
   constructor(
@@ -60,6 +66,11 @@ export class ChatService {
     private readonly documentIndexingService: DocumentIndexingService,
   ) {}
 
+  /**
+   * 序列化会话数据。
+   * @param chatSession 对话会话。
+   * @returns 返回Serialized对话会话。
+   */
   private serializeChatSession(
     chatSession: ChatSessionDocument,
   ): SerializedChatSession {
@@ -68,6 +79,11 @@ export class ChatService {
     ) as SerializedChatSession;
   }
 
+  /**
+   * 序列化消息数据。
+   * @param chatMessage 对话消息。
+   * @returns 返回Serialized对话消息。
+   */
   private serializeChatMessage(
     chatMessage: ChatMessageDocument | Record<string, unknown>,
   ): SerializedChatMessage {
@@ -79,11 +95,21 @@ export class ChatService {
     return serializeMongoResult(rawMessage) as SerializedChatMessage;
   }
 
+  /**
+   * 根据用户问题生成默认会话标题。
+   * @param question 用户最近一次提问内容。
+   * @returns 返回截断并清洗后的会话标题。
+   */
   private buildSessionTitle(question: string) {
     const title = question.trim().replace(/\s+/g, ' ').slice(0, 50);
     return title || '新会话';
   }
 
+  /**
+   * 获取本次请求中最后一条用户消息。
+   * @param dto 问答请求参数。
+   * @returns 返回最后一条有效的用户消息对象。
+   */
   private getLatestHumanMessage(dto: AskChatDto) {
     const latestHumanMessage = [...dto.messages]
       .reverse()
@@ -99,6 +125,12 @@ export class ChatService {
     return latestHumanMessage;
   }
 
+  /**
+   * 校验用户是否有权限访问指定知识库。
+   * @param userId 当前用户 ID。
+   * @param knowledgeBaseId 知识库 ID。
+   * @returns 校验通过后不返回额外内容。
+   */
   private async ensureKnowledgeBaseAccess(
     userId: string,
     knowledgeBaseId: string,
@@ -117,6 +149,12 @@ export class ChatService {
     }
   }
 
+  /**
+   * 查询当前用户拥有的会话。
+   * @param userId 当前用户 ID。
+   * @param sessionId 会话 ID。
+   * @returns 返回对应的会话实体。
+   */
   private async findSessionById(userId: string, sessionId: string) {
     const session = await this.chatSessionModel
       .findOne({
@@ -132,6 +170,13 @@ export class ChatService {
     return session;
   }
 
+  /**
+   * 解析本次问答应使用的会话。
+   * @param userId 当前用户 ID。
+   * @param dto 问答请求参数。
+   * @param question 当前问题内容。
+   * @returns 返回已有会话或新创建的会话实体。
+   */
   private async resolveSession(
     userId: string,
     dto: AskChatDto,
@@ -166,6 +211,11 @@ export class ChatService {
     return session;
   }
 
+  /**
+   * 获取会话中最后一条消息的序号。
+   * @param sessionId 会话 ID。
+   * @returns 返回最后一条消息的序号；若暂无消息则返回 `-1`。
+   */
   private async getLastSequence(sessionId: string) {
     const latestMessage = await this.chatMessageModel
       .findOne({
@@ -181,6 +231,11 @@ export class ChatService {
       : -1;
   }
 
+  /**
+   * 批量创建消息记录。
+   * @param messages 消息列表。
+   * @returns 返回 Promise，解析后得到Serialized对话Message[]。
+   */
   private async createMessages(
     messages: CreateChatMessageParams[],
   ): Promise<SerializedChatMessage[]> {
@@ -215,6 +270,13 @@ export class ChatService {
     return createdMessages.map((message) => this.serializeChatMessage(message));
   }
 
+  /**
+   * 将本次请求中的输入消息写入数据库。
+   * @param userId 当前用户 ID。
+   * @param sessionId 会话 ID。
+   * @param dto 问答请求参数。
+   * @returns 返回新写入的消息记录列表。
+   */
   private async appendIncomingMessages(
     userId: string,
     sessionId: string,
@@ -235,6 +297,18 @@ export class ChatService {
     );
   }
 
+  /**
+   * 将模型生成的最终回答写入数据库。
+   * @param params 助手消息写入参数。
+   * @param params.userId 当前用户 ID。
+   * @param params.sessionId 会话 ID。
+   * @param params.answer 模型生成的最终回答文本。
+   * @param params.responseMetadata 模型响应元数据。
+   * @param params.usageMetadata 模型用量元数据。
+   * @param params.toolCalls 模型返回的工具调用信息。
+   * @param params.sources 回答引用的知识库来源列表。
+   * @returns 返回新写入的助手消息记录。
+   */
   private async appendAssistantMessage(params: {
     userId: string;
     sessionId: string;
@@ -267,6 +341,11 @@ export class ChatService {
     return assistantMessage;
   }
 
+  /**
+   * 将检索命中的分片整理为提示词上下文。
+   * @param hits 检索返回的文档片段列表。
+   * @returns 返回可直接拼入系统提示词的上下文文本。
+   */
   private buildContextText(
     hits: Array<{
       documentName: string;
@@ -292,6 +371,11 @@ export class ChatService {
       .join('\n\n');
   }
 
+  /**
+   * 构建发送给模型的系统提示词。
+   * @param contextText 检索得到的上下文文本，可选。
+   * @returns 返回最终发送给模型的系统提示词。
+   */
   private buildSystemPrompt(contextText?: string) {
     if (!contextText) {
       return '你是一个中文 AI 助手。回答时保持准确、直接、简洁，不要编造事实。';
@@ -307,6 +391,11 @@ export class ChatService {
     ].join('\n');
   }
 
+  /**
+   * 将模型输出内容整理为可展示文本。
+   * @param content 模型返回的原始内容结构。
+   * @returns 返回清洗后的文本内容。
+   */
   private normalizeModelOutput(content: unknown) {
     if (typeof content === 'string') {
       return content.trim();
@@ -337,6 +426,11 @@ export class ChatService {
     return '';
   }
 
+  /**
+   * 从模型返回内容中提取纯文本。
+   * @param content 模型返回的原始内容结构。
+   * @returns 返回拼接后的文本字符串。
+   */
   private extractModelText(content: unknown) {
     if (typeof content === 'string') {
       return content;
@@ -366,6 +460,11 @@ export class ChatService {
     return '';
   }
 
+  /**
+   * 转换为LangChain消息。
+   * @param message 消息对象。
+   * @returns 返回基础消息。
+   */
   private toLangChainMessage(message: SerializedChatMessage): BaseMessage {
     if (message.messageType === ChatMessageType.System) {
       return new SystemMessage({
@@ -401,6 +500,12 @@ export class ChatService {
     });
   }
 
+  /**
+   * 按顺序加载会话下的全部消息。
+   * @param userId 当前用户 ID。
+   * @param sessionId 会话 ID。
+   * @returns 返回按序排列的消息列表。
+   */
   private async loadSessionMessages(userId: string, sessionId: string) {
     const messages = await this.chatMessageModel
       .find({
@@ -414,6 +519,12 @@ export class ChatService {
     return messages.map((message) => this.serializeChatMessage(message));
   }
 
+  /**
+   * 刷新会话更新时间，并按需更新标题。
+   * @param sessionId 会话 ID。
+   * @param title 可选的新标题。
+   * @returns 更新完成后不返回额外内容。
+   */
   private async touchSession(sessionId: string, title?: string) {
     await this.chatSessionModel
       .findByIdAndUpdate(
@@ -426,6 +537,11 @@ export class ChatService {
       .exec();
   }
 
+  /**
+   * 构建普通问答场景下的进度提示文案。
+   * @param hasKnowledgeBase 是否关联知识库。
+   * @returns 返回可轮播展示的进度提示列表。
+   */
   private buildProgressMessages(hasKnowledgeBase: boolean): string[] {
     if (hasKnowledgeBase) {
       return [
@@ -438,6 +554,11 @@ export class ChatService {
     return ['正在分析你的问题...', '正在整理回答结构...', '正在生成回答...'];
   }
 
+  /**
+   * 根据知识库问答阶段生成进度提示文案。
+   * @param stage 当前执行阶段。
+   * @returns 返回该阶段对应的进度提示列表。
+   */
   private buildKnowledgeBaseStageProgressMessages(
     stage:
       | 'preparing_context'
@@ -465,6 +586,11 @@ export class ChatService {
     }
   }
 
+  /**
+   * 解析流式错误消息。
+   * @param error 错误对象。
+   * @returns 返回字符串结果。
+   */
   private resolveStreamErrorMessage(error: unknown): string {
     if (error instanceof GatewayTimeoutException) {
       const timeoutMessage = error.message?.trim();
@@ -483,6 +609,12 @@ export class ChatService {
     return '本次问答处理失败，请稍后重试';
   }
 
+  /**
+   * 创建新的对话会话。
+   * @param userId 当前用户 ID。
+   * @param createChatDto 创建会话的请求参数。
+   * @returns 返回新建后的会话记录。
+   */
   async createSession(userId: string, createChatDto: CreateChatSessionDto) {
     if (createChatDto.knowledgeBaseId) {
       await this.ensureKnowledgeBaseAccess(
@@ -504,6 +636,11 @@ export class ChatService {
     return this.serializeChatSession(session);
   }
 
+  /**
+   * 获取当前用户的全部会话。
+   * @param userId 当前用户 ID。
+   * @returns 返回按更新时间倒序排列的会话列表。
+   */
   async findAllSession(userId: string) {
     const chatSessions = await this.chatSessionModel
       .find({ userId: toObjectId(userId) })
@@ -515,6 +652,13 @@ export class ChatService {
     );
   }
 
+  /**
+   * 更新会话标题。
+   * @param userId 当前用户 ID。
+   * @param id 会话 ID。
+   * @param updateChatDto 会话更新参数。
+   * @returns 返回更新后的会话记录。
+   */
   async updateSession(
     userId: string,
     id: string,
@@ -547,6 +691,12 @@ export class ChatService {
     return this.serializeChatSession(chatSession);
   }
 
+  /**
+   * 删除会话及其关联消息。
+   * @param userId 当前用户 ID。
+   * @param id 会话 ID。
+   * @returns 返回被删除的会话记录。
+   */
   async removeSession(userId: string, id: string) {
     const chatSession = await this.chatSessionModel
       .findOneAndDelete({
@@ -569,6 +719,12 @@ export class ChatService {
     return this.serializeChatSession(chatSession);
   }
 
+  /**
+   * 以流式方式执行问答并持续推送进度。
+   * @param userId 当前用户 ID。
+   * @param dto 问答请求参数。
+   * @returns 返回按 SSE 语义消费的问答流数据。
+   */
   askStream(userId: string, dto: AskChatDto): Observable<ChatAskStreamChunk> {
     return new Observable<ChatAskStreamChunk>((subscriber) => {
       let cancelled = false;
@@ -820,6 +976,12 @@ export class ChatService {
     });
   }
 
+  /**
+   * 执行一次完整问答并等待最终结果。
+   * @param userId 当前用户 ID。
+   * @param dto 问答请求参数。
+   * @returns 返回最终问答结果、消息记录和引用来源。
+   */
   async ask(userId: string, dto: AskChatDto): Promise<ChatAskResponse> {
     const finalChunk = await lastValueFrom(this.askStream(userId, dto));
 
@@ -835,6 +997,12 @@ export class ChatService {
     };
   }
 
+  /**
+   * 查询指定会话的消息列表。
+   * @param userId 当前用户 ID。
+   * @param query 查询参数，包含会话 ID。
+   * @returns 返回该会话下的全部消息记录。
+   */
   async findMessages(userId: string, query: FindChatMessagesQueryDto) {
     await this.findSessionById(userId, query.sessionId);
     return this.loadSessionMessages(userId, query.sessionId);

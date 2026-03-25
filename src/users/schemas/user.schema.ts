@@ -2,36 +2,57 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
 import bcrypt from 'bcryptjs';
 
+/**
+ * 定义用户文档的类型结构。
+ */
 export type UserDocument = HydratedDocument<User> & {
   comparePassword(password: string): Promise<boolean>;
 };
 
+/**
+ * 定义用户状态的可选枚举值。
+ */
 export enum UserStatus {
   Active = 'active',
   Disabled = 'disabled',
 }
 
+/**
+ * 定义用户相关逻辑。
+ */
 @Schema({
   collection: 'users',
   timestamps: true,
   versionKey: false,
 })
 export class User {
+  /**
+   * 保存用户邮箱。
+   */
   @Prop({
     required: true,
     trim: true,
   })
   email: string;
 
+  /**
+   * 保存用户密码。
+   */
   @Prop({ required: true })
   password: string;
 
+  /**
+   * 保存用户名。
+   */
   @Prop({
     required: true,
     trim: true,
   })
   username: string;
 
+  /**
+   * 保存状态。
+   */
   @Prop({
     type: String,
     enum: Object.values(UserStatus),
@@ -40,6 +61,9 @@ export class User {
   })
   status: UserStatus;
 
+  /**
+   * 保存刷新令牌。
+   */
   @Prop({
     type: String,
     default: undefined,
@@ -47,6 +71,9 @@ export class User {
   })
   refreshToken?: string;
 
+  /**
+   * 保存最近登录时间。
+   */
   @Prop({
     type: Date,
     default: Date.now,
@@ -54,6 +81,9 @@ export class User {
   lastLoginAt?: Date;
 }
 
+/**
+ * 定义用户Schema。
+ */
 export const UserSchema = SchemaFactory.createForClass(User);
 
 UserSchema.index({ email: 1 }, { unique: true });

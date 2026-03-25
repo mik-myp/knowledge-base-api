@@ -1,19 +1,31 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 
+/**
+ * 定义文档文档的类型结构。
+ */
 export type DocumentDocument = HydratedDocument<Document>;
 
+/**
+ * 定义文档来源类型的可选枚举值。
+ */
 export enum DocumentSourceType {
   Upload = 'upload',
   Editor = 'editor',
 }
 
+/**
+ * 定义文档相关逻辑。
+ */
 @Schema({
   collection: 'documents',
   timestamps: true,
   versionKey: false,
 })
 export class Document {
+  /**
+   * 保存当前用户 ID。
+   */
   @Prop({
     type: Types.ObjectId,
     ref: 'User',
@@ -22,6 +34,9 @@ export class Document {
   })
   userId: Types.ObjectId;
 
+  /**
+   * 保存知识库 ID。
+   */
   @Prop({
     type: Types.ObjectId,
     ref: 'KnowledgeBase',
@@ -30,6 +45,9 @@ export class Document {
   })
   knowledgeBaseId: Types.ObjectId;
 
+  /**
+   * 保存来源类型。
+   */
   @Prop({
     type: String,
     enum: Object.values(DocumentSourceType),
@@ -37,6 +55,9 @@ export class Document {
   })
   sourceType: DocumentSourceType;
 
+  /**
+   * 保存originalName。
+   */
   @Prop({
     type: String,
     required: true,
@@ -44,6 +65,9 @@ export class Document {
   })
   originalName: string;
 
+  /**
+   * 保存storageKey。
+   */
   @Prop({
     type: String,
     trim: true,
@@ -51,12 +75,18 @@ export class Document {
   })
   storageKey?: string;
 
+  /**
+   * 保存内容。
+   */
   @Prop({
     type: String,
     default: undefined,
   })
   content?: string;
 
+  /**
+   * 保存extension。
+   */
   @Prop({
     type: String,
     required: true,
@@ -65,6 +95,9 @@ export class Document {
   })
   extension: string;
 
+  /**
+   * 保存mime类型。
+   */
   @Prop({
     type: String,
     required: true,
@@ -73,6 +106,9 @@ export class Document {
   })
   mimeType: string;
 
+  /**
+   * 保存大小。
+   */
   @Prop({
     type: Number,
     required: true,
@@ -81,6 +117,9 @@ export class Document {
   size: number;
 }
 
+/**
+ * 定义文档Schema。
+ */
 export const DocumentSchema = SchemaFactory.createForClass(Document);
 
 DocumentSchema.index({ userId: 1, knowledgeBaseId: 1 });

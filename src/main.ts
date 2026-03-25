@@ -3,6 +3,10 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
+/**
+ * 初始化 Nest 应用、全局校验和 Swagger 文档。
+ * @returns 应用启动完成后不返回额外内容。
+ */
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
@@ -10,6 +14,7 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true,
       transform: true,
+      forbidNonWhitelisted: true,
     }),
   );
 

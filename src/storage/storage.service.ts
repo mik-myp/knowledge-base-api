@@ -12,20 +12,40 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
+/**
+ * 负责Storage相关业务处理的服务。
+ */
 @Injectable()
 export class StorageService {
+  /**
+   * 保存logger。
+   */
   private readonly logger = new Logger(StorageService.name);
 
+  /**
+   * 保存s3Client。
+   */
   private s3Client?: S3Client;
 
+  /**
+   * 保存s3BucketName。
+   */
   private s3BucketName?: string;
 
   constructor(private configService: ConfigService) {}
 
+  /**
+   * 获取Endpoint。
+   * @returns 返回字符串或undefined。
+   */
   private getEndpoint(): string | undefined {
     return this.configService.get<string>('AWS_ENDPOINT');
   }
 
+  /**
+   * 判断是否为Configured。
+   * @returns 返回布尔值，表示是否满足Configured。
+   */
   isConfigured(): boolean {
     return Boolean(
       this.getEndpoint() &&
@@ -35,6 +55,10 @@ export class StorageService {
     );
   }
 
+  /**
+   * 校验并返回Client。
+   * @returns 返回对象。
+   */
   private ensureClient(): { client: S3Client; bucketName: string } {
     if (this.s3Client && this.s3BucketName) {
       return {
@@ -73,6 +97,12 @@ export class StorageService {
     };
   }
 
+  /**
+   * 上传文件。
+   * @param file 文件对象。
+   * @param folder folder。
+   * @returns 返回 Promise，解析后得到字符串。
+   */
   async uploadFile(
     file: Express.Multer.File,
     folder?: string,
@@ -92,6 +122,11 @@ export class StorageService {
     return key;
   }
 
+  /**
+   * 删除文件。
+   * @param key key。
+   * @returns 返回 Promise，完成后无额外返回值。
+   */
   async deleteFile(key: string): Promise<void> {
     const { client, bucketName } = this.ensureClient();
     const command = new DeleteObjectCommand({
@@ -101,6 +136,12 @@ export class StorageService {
     await client.send(command);
   }
 
+  /**
+   * 获取SignedURL。
+   * @param key key。
+   * @param expiresIn expiresIn。
+   * @returns 返回 Promise，解析后得到字符串。
+   */
   async getSignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
     const { client, bucketName } = this.ensureClient();
     const command = new GetObjectCommand({
@@ -111,6 +152,11 @@ export class StorageService {
     return getSignedUrl(client, command, { expiresIn });
   }
 
+  /**
+   * 下载文件。
+   * @param key key。
+   * @returns 返回 Promise，解析后得到对象。
+   */
   async downloadFile(
     key: string,
   ): Promise<{ body: Buffer; contentType?: string }> {

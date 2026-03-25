@@ -23,6 +23,9 @@ import {
   type UserProfile,
 } from './types/users.types';
 
+/**
+ * 负责用户相关业务处理的服务。
+ */
 @Injectable()
 export class UsersService {
   constructor(
@@ -31,6 +34,11 @@ export class UsersService {
     private readonly configService: ConfigService,
   ) {}
 
+  /**
+   * 处理用户注册。
+   * @param registerDto 注册请求参数，包含用户名、邮箱和密码。
+   * @returns 返回 Promise，解析后得到令牌对结果。
+   */
   async register(registerDto: RegisterDto): Promise<TokenPairResult> {
     const { username, email, password } = registerDto;
 
@@ -53,6 +61,11 @@ export class UsersService {
     return this.issueTokenPair(newUser, { touchLastLoginAt: true });
   }
 
+  /**
+   * 处理用户登录。
+   * @param loginDto 登录请求参数，包含邮箱和密码。
+   * @returns 返回 Promise，解析后得到令牌对结果。
+   */
   async login(loginDto: LoginDto): Promise<TokenPairResult> {
     const { email, password } = loginDto;
 
@@ -73,6 +86,11 @@ export class UsersService {
     return this.issueTokenPair(user, { touchLastLoginAt: true });
   }
 
+  /**
+   * 刷新令牌。
+   * @param refreshTokenDto 刷新令牌请求参数。
+   * @returns 返回 Promise，解析后得到令牌对结果。
+   */
   async refresh(refreshTokenDto: RefreshTokenDto): Promise<TokenPairResult> {
     const payload = await this.verifyRefreshToken(refreshTokenDto.refreshToken);
     const userObjectId = toObjectId(
@@ -103,6 +121,11 @@ export class UsersService {
     return this.issueTokenPair(user);
   }
 
+  /**
+   * 处理用户退出登录。
+   * @param userId 当前用户 ID。
+   * @returns 返回 Promise，解析后得到退出登录结果。
+   */
   async logout(userId: string): Promise<LogoutResult> {
     const user = await this.getActiveUserByIdOrThrow(userId);
 
@@ -114,12 +137,22 @@ export class UsersService {
     };
   }
 
+  /**
+   * 获取当前用户信息。
+   * @param userId 当前用户 ID。
+   * @returns 返回 Promise，解析后得到用户资料。
+   */
   async me(userId: string): Promise<UserProfile> {
     const user = await this.getActiveUserByIdOrThrow(userId);
 
     return this.toUserProfile(user);
   }
 
+  /**
+   * 获取有效用户，不存在时抛出异常。
+   * @param userId 当前用户 ID。
+   * @returns 返回 Promise，解析后得到用户文档。
+   */
   async getActiveUserByIdOrThrow(userId: string): Promise<UserDocument> {
     const userObjectId = toObjectId(
       userId,
@@ -135,6 +168,13 @@ export class UsersService {
     return user;
   }
 
+  /**
+   * 签发令牌对。
+   * @param user 用户。
+   * @param options 配置项。
+   * @param options.touchLastLoginAt 是否更新最近登录时间。
+   * @returns 返回 Promise，解析后得到令牌对结果。
+   */
   private async issueTokenPair(
     user: UserDocument,
     options: { touchLastLoginAt?: boolean } = {},
@@ -163,6 +203,11 @@ export class UsersService {
     };
   }
 
+  /**
+   * 创建访问令牌载荷。
+   * @param user 用户。
+   * @returns 返回访问令牌载荷。
+   */
   private createAccessTokenPayload(user: UserDocument): AccessTokenPayload {
     return {
       userId: user.id,
@@ -171,6 +216,11 @@ export class UsersService {
     };
   }
 
+  /**
+   * 创建刷新令牌载荷。
+   * @param user 用户。
+   * @returns 返回刷新令牌载荷。
+   */
   private createRefreshTokenPayload(user: UserDocument): RefreshTokenPayload {
     return {
       userId: user.id,
@@ -180,10 +230,20 @@ export class UsersService {
     };
   }
 
+  /**
+   * 生成访问令牌。
+   * @param payload 载荷数据。
+   * @returns 返回 Promise，解析后得到字符串。
+   */
   private async signAccessToken(payload: AccessTokenPayload): Promise<string> {
     return this.jwtService.signAsync(payload);
   }
 
+  /**
+   * 生成刷新令牌。
+   * @param payload 载荷数据。
+   * @returns 返回 Promise，解析后得到字符串。
+   */
   private async signRefreshToken(
     payload: RefreshTokenPayload,
   ): Promise<string> {
@@ -193,6 +253,11 @@ export class UsersService {
     });
   }
 
+  /**
+   * 校验刷新令牌。
+   * @param token 令牌。
+   * @returns 返回 Promise，解析后得到刷新令牌载荷。
+   */
   private async verifyRefreshToken(
     token: string,
   ): Promise<RefreshTokenPayload> {
@@ -211,6 +276,10 @@ export class UsersService {
     }
   }
 
+  /**
+   * 获取刷新令牌Secret。
+   * @returns 返回字符串结果。
+   */
   private getRefreshTokenSecret(): string {
     return (
       this.configService.get<string>('JWT_REFRESH_SECRET') ??
@@ -218,6 +287,10 @@ export class UsersService {
     );
   }
 
+  /**
+   * 获取刷新令牌ExpiresIn。
+   * @returns 返回NonNullable<JwtSignOptions['expiresIn']>。
+   */
   private getRefreshTokenExpiresIn(): NonNullable<JwtSignOptions['expiresIn']> {
     return (
       this.configService.get<JwtSignOptions['expiresIn']>(
@@ -226,6 +299,12 @@ export class UsersService {
     );
   }
 
+  /**
+   * 确保用户存在。
+   * @param user 用户。
+   * @param message 消息对象。
+   * @returns 返回用户文档。
+   */
   private ensureUserExists(
     user: UserDocument | null,
     message: string,
@@ -237,12 +316,23 @@ export class UsersService {
     return user;
   }
 
+  /**
+   * 断言用户处于启用状态。
+   * @param user 用户。
+   * @param message 消息对象。
+   * @returns 无返回值。
+   */
   private assertUserIsActive(user: UserDocument, message: string): void {
     if (user.status !== UserStatus.Active) {
       throw new UnauthorizedException(message);
     }
   }
 
+  /**
+   * 转换用户资料。
+   * @param user 用户。
+   * @returns 返回用户资料。
+   */
   private toUserProfile(user: UserDocument): UserProfile {
     return {
       id: user.id,

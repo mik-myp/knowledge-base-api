@@ -12,10 +12,22 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 
+/**
+ * 捕获未处理异常并返回统一错误响应。
+ */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
+  /**
+   * 记录异常过滤器中的错误日志。
+   */
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
+  /**
+   * 捕获异常并写出统一错误响应。
+   * @param exception 当前捕获到的异常对象。
+   * @param host 当前执行上下文。
+   * @returns 响应写出后不返回额外内容。
+   */
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();

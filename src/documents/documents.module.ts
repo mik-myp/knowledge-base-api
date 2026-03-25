@@ -15,6 +15,9 @@ import {
 import { DocumentIndexingService } from './document-indexing.service';
 import { LangchainModule } from 'src/langchain/langchain.module';
 
+/**
+ * 组织文档相关依赖的模块。
+ */
 @Module({
   imports: [
     MongooseModule.forFeature([

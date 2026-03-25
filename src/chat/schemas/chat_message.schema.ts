@@ -7,14 +7,23 @@ import type {
 } from '../types/chat.types';
 import { ChatMessageType } from '../types/chat.types';
 
+/**
+ * 定义对话消息文档的类型结构。
+ */
 export type ChatMessageDocument = HydratedDocument<ChatMessage>;
 
+/**
+ * 定义对话消息相关逻辑。
+ */
 @Schema({
   collection: 'chat_messages',
   timestamps: true,
   versionKey: false,
 })
 export class ChatMessage {
+  /**
+   * 保存当前用户 ID。
+   */
   @Prop({
     type: Types.ObjectId,
     ref: 'User',
@@ -23,6 +32,9 @@ export class ChatMessage {
   })
   userId: Types.ObjectId;
 
+  /**
+   * 保存会话 ID。
+   */
   @Prop({
     type: Types.ObjectId,
     ref: 'ChatSession',
@@ -31,6 +43,9 @@ export class ChatMessage {
   })
   sessionId: Types.ObjectId;
 
+  /**
+   * 保存消息类型。
+   */
   @Prop({
     type: String,
     enum: Object.values(ChatMessageType),
@@ -38,6 +53,9 @@ export class ChatMessage {
   })
   messageType: ChatMessageType;
 
+  /**
+   * 保存内容。
+   */
   @Prop({
     type: String,
     required: true,
@@ -45,12 +63,18 @@ export class ChatMessage {
   })
   content: string;
 
+  /**
+   * 保存消息序号。
+   */
   @Prop({
     type: Number,
     required: true,
   })
   sequence: number;
 
+  /**
+   * 保存名称。
+   */
   @Prop({
     type: String,
     required: false,
@@ -58,12 +82,18 @@ export class ChatMessage {
   })
   name?: string;
 
+  /**
+   * 保存工具调用Id。
+   */
   @Prop({
     type: String,
     required: false,
   })
   toolCallId?: string;
 
+  /**
+   * 保存工具调用列表。
+   */
   @Prop({
     type: [
       {
@@ -85,18 +115,27 @@ export class ChatMessage {
   })
   toolCalls?: ChatToolCall[];
 
+  /**
+   * 保存响应元数据。
+   */
   @Prop({
     type: MongooseSchema.Types.Mixed,
     required: false,
   })
   responseMetadata?: Record<string, unknown>;
 
+  /**
+   * 保存用量元数据。
+   */
   @Prop({
     type: MongooseSchema.Types.Mixed,
     required: false,
   })
   usageMetadata?: ChatUsageMetadata;
 
+  /**
+   * 保存来源信息列表。
+   */
   @Prop({
     type: [
       {
@@ -132,6 +171,9 @@ export class ChatMessage {
   sources?: ChatMessageSource[];
 }
 
+/**
+ * 定义对话消息Schema。
+ */
 export const ChatMessageSchema = SchemaFactory.createForClass(ChatMessage);
 ChatMessageSchema.index({ userId: 1, sessionId: 1, sequence: 1 });
 ChatMessageSchema.index({ sessionId: 1, createdAt: 1 });

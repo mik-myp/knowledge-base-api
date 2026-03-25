@@ -21,11 +21,19 @@ import type {
   UserRequest,
 } from './types/users.types';
 
+/**
+ * 负责用户相关接口处理的控制器。
+ */
 @ApiTags('users')
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  /**
+   * 处理用户注册。
+   * @param registerDto 注册请求参数，包含用户名、邮箱和密码。
+   * @returns 返回 Promise，解析后得到SuccessResponse<Token对Result>。
+   */
   @Post('register')
   @Public()
   @ApiOperation({ summary: '用户注册' })
@@ -39,6 +47,11 @@ export class UsersController {
     return ResponseUtil.success<TokenPairResult>(result);
   }
 
+  /**
+   * 处理用户登录。
+   * @param loginDto 登录请求参数，包含邮箱和密码。
+   * @returns 返回 Promise，解析后得到SuccessResponse<Token对Result>。
+   */
   @Post('login')
   @Public()
   @ApiOperation({ summary: '用户登录' })
@@ -52,6 +65,11 @@ export class UsersController {
     return ResponseUtil.success<TokenPairResult>(result);
   }
 
+  /**
+   * 刷新令牌。
+   * @param refreshTokenDto 刷新令牌请求参数。
+   * @returns 返回 Promise，解析后得到SuccessResponse<Token对Result>。
+   */
   @Post('refresh')
   @Public()
   @ApiOperation({ summary: '刷新 accessToken' })
@@ -67,6 +85,11 @@ export class UsersController {
     return ResponseUtil.success<TokenPairResult>(result);
   }
 
+  /**
+   * 处理用户退出登录。
+   * @param req 请求对象。
+   * @returns 返回 Promise，解析后得到SuccessResponse<LogoutResult>。
+   */
   @Post('logout')
   @ApiBearerAuth()
   @ApiOperation({ summary: '退出登录' })
@@ -79,6 +102,11 @@ export class UsersController {
     return ResponseUtil.success<LogoutResult>(result);
   }
 
+  /**
+   * 获取当前用户信息。
+   * @param req 请求对象。
+   * @returns 返回 Promise，解析后得到SuccessResponse<UserProfile>。
+   */
   @Get('me')
   @ApiBearerAuth()
   @ApiOperation({ summary: '获取当前登录用户信息' })

@@ -17,6 +17,9 @@ import { KnowledgeBasesModule } from './knowledge_bases/knowledge_bases.module';
 import { DocumentsModule } from './documents/documents.module';
 import { ChatModule } from './chat/chat.module';
 
+/**
+ * 组织App相关依赖的模块。
+ */
 @Module({
   imports: [
     StorageModule,

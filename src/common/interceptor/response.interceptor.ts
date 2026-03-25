@@ -12,6 +12,9 @@ import {
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 
+/**
+ * 描述统一响应拦截器输出的数据结构。
+ */
 export interface ResponseFormat<T = any> {
   code: number;
   message: string;
@@ -20,11 +23,20 @@ export interface ResponseFormat<T = any> {
   path: string;
 }
 
+/**
+ * 将控制器返回值包装成统一响应格式。
+ */
 @Injectable()
 export class ResponseInterceptor<T> implements NestInterceptor<
   T,
   ResponseFormat<T>
 > {
+  /**
+   * 拦截控制器响应并补充统一字段。
+   * @param context 当前执行上下文。
+   * @param next 后续处理器。
+   * @returns 返回统一格式的响应流。
+   */
   intercept(
     context: ExecutionContext,
     next: CallHandler,

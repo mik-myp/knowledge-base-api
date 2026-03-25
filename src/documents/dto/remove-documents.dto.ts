@@ -1,7 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ArrayMinSize, IsArray, IsMongoId } from 'class-validator';
 
+/**
+ * 定义删除文档的 DTO 结构。
+ */
 export class RemoveDocumentsDto {
+  /**
+   * 保存文档 ID 列表。
+   */
   @ApiProperty({
     description: 'Document ids to delete.',
     type: [String],
