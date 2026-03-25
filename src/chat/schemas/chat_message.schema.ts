@@ -164,6 +164,9 @@ export class ChatMessage {
         score: {
           type: Number,
         },
+        text: {
+          type: String,
+        },
       },
     ],
     required: false,

@@ -36,6 +36,7 @@ export type ChatMessageSource = {
   startIndex?: number;
   endIndex?: number;
   score?: number;
+  text?: string;
 };
 
 /**

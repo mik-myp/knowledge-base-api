@@ -15,7 +15,7 @@ import {
   type BaseMessage,
 } from 'langchain';
 import { Model } from 'mongoose';
-import { Observable, lastValueFrom } from 'rxjs';
+import { Observable } from 'rxjs';
 import { serializeMongoResult } from 'src/common/plugins/mongoose-serialize.plugin';
 import { toObjectId } from 'src/common/utils/object-id.util';
 import { DocumentIndexingService } from 'src/documents/document-indexing.service';
@@ -38,7 +38,6 @@ import {
 } from './schemas/chat_session.schema';
 import {
   ChatMessageType,
-  type ChatAskResponse,
   type ChatAskStreamChunk,
   type CreateChatMessageParams,
   type SerializedChatMessage,
@@ -263,6 +262,7 @@ export class ChatService {
           startIndex: source.startIndex,
           endIndex: source.endIndex,
           score: source.score,
+          text: source.text,
         })),
       })),
     );
@@ -853,6 +853,11 @@ export class ChatService {
             },
           });
 
+          console.log(
+            '🚀 ~ chat.service.ts:856 ~ ChatService ~ askStream ~ hits:',
+            hits,
+          );
+
           systemPrompt = this.buildSystemPrompt(this.buildContextText(hits));
           sources.push(
             ...hits.map((hit) => ({
@@ -863,6 +868,7 @@ export class ChatService {
               startIndex: hit.startIndex,
               endIndex: hit.endIndex,
               score: hit.score,
+              text: hit.text,
             })),
           );
         }
@@ -974,27 +980,6 @@ export class ChatService {
         stopProgressHeartbeat();
       };
     });
-  }
-
-  /**
-   * 执行一次完整问答并等待最终结果。
-   * @param userId 当前用户 ID。
-   * @param dto 问答请求参数。
-   * @returns 返回最终问答结果、消息记录和引用来源。
-   */
-  async ask(userId: string, dto: AskChatDto): Promise<ChatAskResponse> {
-    const finalChunk = await lastValueFrom(this.askStream(userId, dto));
-
-    if (!finalChunk.message || !finalChunk.sources) {
-      throw new BadRequestException('未获取到完整回答');
-    }
-
-    return {
-      sessionId: finalChunk.sessionId,
-      answer: finalChunk.answer,
-      message: finalChunk.message,
-      sources: finalChunk.sources,
-    };
   }
 
   /**
