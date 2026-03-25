@@ -249,7 +249,39 @@
 #### 向量的创建：
 
 ![MongoDB Atlas 中创建 Vector Search 索引的入口](readme-assets/mongodb-atlas-create-vector-search-index.png)
-![MongoDB Atlas Vector Search 索引配置示例](readme-assets/mongodb-atlas-vector-index-configuration.png)
+![MongoDB Atlas 中配置向量集合并切换到 JSON Editor](readme-assets/mongodb-atlas-vector-index-collection-and-editor-mode.png)
+![MongoDB Atlas 中配置 numDimensions 等向量字段参数](readme-assets/mongodb-atlas-vector-index-num-dimensions-configuration.png)
+
+`numDimensions` 需要根据你所使用的模型所支持的向量维度来设置。
+
+![阿里云百炼 Embedding 模型维度对照表](readme-assets/aliyun-embedding-model-dimensions-reference.png)
+
+例如：`text-embedding-v4` 和 `text-embedding-v3` 就填 1024，`text-embedding-v2` 和 `text-embedding-v1` 填 1536
+
+```json
+{
+  "fields": [
+    {
+      "numDimensions": 1024,
+      "path": "embedding",
+      "similarity": "cosine",
+      "type": "vector"
+    },
+    {
+      "path": "userId",
+      "type": "filter"
+    },
+    {
+      "path": "knowledgeBaseId",
+      "type": "filter"
+    },
+    {
+      "path": "documentId",
+      "type": "filter"
+    }
+  ]
+}
+```
 
 | 变量名                                  | 字段类型  | 默认值                                         | 是否必填 | 说明                                       |
 | --------------------------------------- | --------- | ---------------------------------------------- | -------- | ------------------------------------------ |
@@ -308,8 +340,6 @@
 ![Cloudflare R2 中创建 API Token 的入口](readme-assets/cloudflare-r2-create-api-token.png)
 ![Cloudflare R2 中查看 S3 凭证与 Endpoint](readme-assets/cloudflare-r2-s3-credentials-and-endpoint.png)
 ![Cloudflare R2 中创建 Bucket 的入口](readme-assets/cloudflare-r2-create-bucket.png)
-
-
 
 | 变量名                  | 字段类型 | 默认值 | 是否必填   | 说明                 |
 | ----------------------- | -------- | ------ | ---------- | -------------------- |
