@@ -22,9 +22,13 @@ export class StorageService {
 
   constructor(private configService: ConfigService) {}
 
+  private getEndpoint(): string | undefined {
+    return this.configService.get<string>('AWS_ENDPOINT');
+  }
+
   isConfigured(): boolean {
     return Boolean(
-      this.configService.get<string>('AWS_EMD_POINT') &&
+      this.getEndpoint() &&
       this.configService.get<string>('AWS_ACCESS_KEY_ID') &&
       this.configService.get<string>('AWS_SECRET_ACCESS_KEY') &&
       this.configService.get<string>('S3_BUCKET_NAME'),
@@ -39,7 +43,7 @@ export class StorageService {
       };
     }
 
-    const endpoint = this.configService.get<string>('AWS_EMD_POINT');
+    const endpoint = this.getEndpoint();
     const accessKeyId = this.configService.get<string>('AWS_ACCESS_KEY_ID');
     const secretAccessKey = this.configService.get<string>(
       'AWS_SECRET_ACCESS_KEY',
@@ -47,7 +51,9 @@ export class StorageService {
     const bucketName = this.configService.get<string>('S3_BUCKET_NAME');
 
     if (!endpoint || !accessKeyId || !secretAccessKey || !bucketName) {
-      throw new Error('对象存储配置缺失，无法执行文件上传相关操作');
+      throw new Error(
+        'Object storage configuration is incomplete. File operations are unavailable.',
+      );
     }
 
     this.s3Client = new S3Client({
@@ -116,7 +122,7 @@ export class StorageService {
     const response = await client.send(command);
 
     if (!response.Body) {
-      throw new Error('对象存储文件不存在或内容为空');
+      throw new Error('Object storage file is missing or empty.');
     }
 
     const bytes = await response.Body.transformToByteArray();

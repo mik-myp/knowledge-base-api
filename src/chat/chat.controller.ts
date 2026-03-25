@@ -1,28 +1,47 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
-  Request,
+  Get,
+  Param,
+  Patch,
+  Post,
   Query,
+  Request,
   Res,
 } from '@nestjs/common';
-import { ChatService } from './chat.service';
-import { CreateChatSessionDto } from './dto/create-chat_session.dto';
-import { UpdateChatSessionDto } from './dto/update-chat_session.dto';
-import type { UserRequest } from 'src/users/types/users.types';
-import { AskChatDto } from './dto/ask-chat.dto';
-import { FindChatMessagesQueryDto } from './dto/find-chat-messages-query.dto';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiBody,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiProduces,
+  ApiQuery,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
 import type { Response } from 'express';
+import { ParseObjectIdPipe } from 'src/common/pipes/parse-object-id.pipe';
+import type { UserRequest } from 'src/users/types/users.types';
+import { ChatService } from './chat.service';
+import { AskChatDto } from './dto/ask-chat.dto';
+import { CreateChatSessionDto } from './dto/create-chat_session.dto';
+import { FindChatMessagesQueryDto } from './dto/find-chat-messages-query.dto';
+import { UpdateChatSessionDto } from './dto/update-chat_session.dto';
 
+@ApiTags('chat')
+@ApiBearerAuth()
 @Controller('chat')
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
   @Post('/sessions')
+  @ApiOperation({ summary: 'Create a chat session' })
+  @ApiBody({ type: CreateChatSessionDto })
+  @ApiOkResponse({ description: 'Session created successfully' })
+  @ApiUnauthorizedResponse({ description: 'Missing or invalid access token' })
   createSession(
     @Request() req: UserRequest,
     @Body() createChatDto: CreateChatSessionDto,
@@ -31,25 +50,53 @@ export class ChatController {
   }
 
   @Get('/sessions')
+  @ApiOperation({ summary: 'List current user chat sessions' })
+  @ApiOkResponse({ description: 'Session list loaded successfully' })
+  @ApiUnauthorizedResponse({ description: 'Missing or invalid access token' })
   findAllSession(@Request() req: UserRequest) {
     return this.chatService.findAllSession(req.user.userId);
   }
 
   @Patch('/sessions/:id')
+  @ApiOperation({ summary: 'Rename a chat session' })
+  @ApiParam({ name: 'id', description: 'Session id' })
+  @ApiBody({ type: UpdateChatSessionDto })
+  @ApiOkResponse({ description: 'Session updated successfully' })
+  @ApiBadRequestResponse({
+    description: 'Session id format is invalid or title is invalid',
+  })
+  @ApiUnauthorizedResponse({ description: 'Missing or invalid access token' })
   updateSession(
     @Request() req: UserRequest,
-    @Param('id') id: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Body() updateChatDto: UpdateChatSessionDto,
   ) {
     return this.chatService.updateSession(req.user.userId, id, updateChatDto);
   }
 
   @Delete('/sessions/:id')
-  removeSession(@Request() req: UserRequest, @Param('id') id: string) {
+  @ApiOperation({ summary: 'Delete a chat session' })
+  @ApiParam({ name: 'id', description: 'Session id' })
+  @ApiOkResponse({ description: 'Session and its messages were deleted' })
+  @ApiBadRequestResponse({ description: 'Session id format is invalid' })
+  @ApiUnauthorizedResponse({ description: 'Missing or invalid access token' })
+  removeSession(
+    @Request() req: UserRequest,
+    @Param('id', ParseObjectIdPipe) id: string,
+  ) {
     return this.chatService.removeSession(req.user.userId, id);
   }
 
   @Post('/ask')
+  @ApiOperation({ summary: 'Start an AI answer request with SSE streaming' })
+  @ApiBody({ type: AskChatDto })
+  @ApiProduces('text/event-stream')
+  @ApiOkResponse({
+    description:
+      'Returns text/event-stream. Each event chunk is a JSON payload string.',
+  })
+  @ApiBadRequestResponse({ description: 'Request payload is invalid' })
+  @ApiUnauthorizedResponse({ description: 'Missing or invalid access token' })
   ask(
     @Request() req: UserRequest,
     @Body() askDto: AskChatDto,
@@ -81,6 +128,15 @@ export class ChatController {
   }
 
   @Get('/messages')
+  @ApiOperation({ summary: 'Get messages for a chat session' })
+  @ApiQuery({
+    name: 'sessionId',
+    description: 'Session id',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @ApiOkResponse({ description: 'Messages loaded successfully' })
+  @ApiBadRequestResponse({ description: 'sessionId format is invalid' })
+  @ApiUnauthorizedResponse({ description: 'Missing or invalid access token' })
   findMessages(
     @Request() req: UserRequest,
     @Query() query: FindChatMessagesQueryDto,
@@ -89,6 +145,18 @@ export class ChatController {
   }
 
   @Get('/history/messages')
+  @ApiOperation({
+    summary: 'Get messages for a chat session (legacy route)',
+    deprecated: true,
+  })
+  @ApiQuery({
+    name: 'sessionId',
+    description: 'Session id',
+    example: '507f1f77bcf86cd799439011',
+  })
+  @ApiOkResponse({ description: 'Messages loaded successfully' })
+  @ApiBadRequestResponse({ description: 'sessionId format is invalid' })
+  @ApiUnauthorizedResponse({ description: 'Missing or invalid access token' })
   findHistoryMessages(
     @Request() req: UserRequest,
     @Query() query: FindChatMessagesQueryDto,

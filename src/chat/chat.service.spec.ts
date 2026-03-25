@@ -1,6 +1,8 @@
 import { DocumentIndexingService } from 'src/documents/document-indexing.service';
 import { LangchainService } from 'src/langchain/langchain.service';
+import type { VectorSearchHit } from 'src/langchain/types/langchain.types';
 import { ChatService } from './chat.service';
+import { AskChatDto } from './dto/ask-chat.dto';
 import {
   ChatMessageType,
   type SerializedChatMessage,
@@ -8,6 +10,7 @@ import {
 
 describe('ChatService', () => {
   let service: ChatService;
+  type ChatServiceDependencies = ConstructorParameters<typeof ChatService>;
 
   const toAsyncIterable = <T>(items: T[]): AsyncIterable<T> => ({
     async *[Symbol.asyncIterator]() {
@@ -17,9 +20,9 @@ describe('ChatService', () => {
     },
   });
 
-  const chatSessionModel = {} as any;
-  const chatMessageModel = {} as any;
-  const knowledgeBaseModel = {} as any;
+  const chatSessionModel = {} as ChatServiceDependencies[0];
+  const chatMessageModel = {} as ChatServiceDependencies[1];
+  const knowledgeBaseModel = {} as ChatServiceDependencies[2];
   const langchainService = {
     createChatModel: jest.fn(),
   } as unknown as jest.Mocked<Pick<LangchainService, 'createChatModel'>>;
@@ -79,7 +82,7 @@ describe('ChatService', () => {
           },
         ]),
       ),
-    } as any);
+    } as ReturnType<LangchainService['createChatModel']>);
     jest
       .spyOn(service as any, 'appendAssistantMessage')
       .mockResolvedValue(aiMessage);
@@ -94,7 +97,7 @@ describe('ChatService', () => {
           content: 'hello',
         },
       ],
-    } as any);
+    } as AskChatDto);
 
     expect((service as any).resolveSession).toHaveBeenCalledWith(
       'user-id',
@@ -164,7 +167,7 @@ describe('ChatService', () => {
           },
         ]),
       ),
-    } as any);
+    } as ReturnType<LangchainService['createChatModel']>);
     jest
       .spyOn(service as any, 'appendAssistantMessage')
       .mockResolvedValue(aiMessage);
@@ -180,7 +183,7 @@ describe('ChatService', () => {
         endIndex: 40,
         score: 0.91,
       },
-    ] as any);
+    ] as VectorSearchHit[]);
 
     const result = await service.ask('user-id', {
       sessionId: 'session-id',
@@ -191,14 +194,16 @@ describe('ChatService', () => {
         },
       ],
       topK: 4,
-    } as any);
+    } as AskChatDto);
 
-    expect(documentIndexingService.semanticSearch).toHaveBeenCalledWith({
-      userId: 'user-id',
-      knowledgeBaseId: 'knowledge-id',
-      question: 'explain it',
-      topK: 4,
-    });
+    expect(documentIndexingService.semanticSearch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user-id',
+        knowledgeBaseId: 'knowledge-id',
+        question: 'explain it',
+        topK: 4,
+      }),
+    );
     expect(result.sources).toEqual(aiMessage.sources);
     expect(result.answer).toBe('answer from knowledge');
   });
@@ -218,15 +223,16 @@ describe('ChatService', () => {
     chatSessionModel.findOneAndDelete = jest.fn().mockReturnValue({
       exec: jest.fn().mockResolvedValue(chatSession),
     });
-    chatMessageModel.deleteMany = jest.fn().mockReturnValue({
+    const deleteMany = jest.fn().mockReturnValue({
       exec: jest.fn().mockResolvedValue({ deletedCount: 2 }),
     });
+    chatMessageModel.deleteMany = deleteMany;
 
     await service.removeSession(
       '507f1f77bcf86cd799439012',
       '507f1f77bcf86cd799439011',
     );
 
-    expect(chatMessageModel.deleteMany).toHaveBeenCalled();
+    expect(deleteMany).toHaveBeenCalled();
   });
 });

@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { Document as LangChainDocument } from 'langchain';
 import type { Connection } from 'mongoose';
 import { LangchainService } from 'src/langchain/langchain.service';
@@ -35,9 +36,13 @@ describe('DocumentIndexingService', () => {
         collection: jest.fn().mockReturnValue(collectionMock),
       },
     } as unknown as Connection;
+    const configService = {
+      get: jest.fn(),
+    } as unknown as ConfigService;
 
     service = new DocumentIndexingService(
       langchainService as unknown as LangchainService,
+      configService,
       connection,
     );
     process.env.MONGODB_VECTOR_COLLECTION = 'document_chunk_vectors';
@@ -172,7 +177,7 @@ describe('DocumentIndexingService', () => {
     langchainService.createEmbeddings.mockReturnValue({
       embedDocuments: jest.fn().mockResolvedValue([[0.1], [0.2]]),
       embedQuery: jest.fn(),
-    } as any);
+    } as ReturnType<LangchainService['createEmbeddings']>);
 
     await service.replaceDocumentVectors({
       userId: 'user-id',

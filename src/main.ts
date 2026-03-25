@@ -1,28 +1,41 @@
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { AppModule } from './app.module';
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true, // 自动移除 DTO 中没有声明的字段
-      transform: true, // 自动类型转换
+      whitelist: true,
+      transform: true,
     }),
   );
 
   app.enableCors({});
 
   const config = new DocumentBuilder()
-    .setTitle('API 文档')
-    .setDescription('接口说明')
+    .setTitle('Knowledge Base API')
+    .setDescription(
+      'API docs for users, knowledge bases, documents and AI chat modules.',
+    )
     .setVersion('1.0.0')
-    .addBearerAuth()
+    .addBearerAuth({
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT',
+      description: 'Paste the access token here.',
+    })
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('docs', app, document);
+  SwaggerModule.setup('docs', app, document, {
+    customSiteTitle: 'Knowledge Base API Docs',
+    swaggerOptions: {
+      persistAuthorization: true,
+    },
+  });
 
   await app.listen(process.env.PORT ?? 3000);
 }
