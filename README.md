@@ -150,15 +150,15 @@
 
 ## 主要数据结构
 
-| 集合 / 存储 | 作用 |
-| --- | --- |
-| `users` | 存储用户、密码、状态、refreshToken、最近登录时间 |
-| `knowledge_bases` | 存储知识库名称、描述、归属用户 |
-| `documents` | 存储文档元信息、原文内容或对象存储 key |
-| `document_chunks` | 存储切分后的文本片段和定位信息 |
-| 向量集合 | 存储文档片段向量，供 MongoDB 向量检索使用 |
-| `chat_sessions` | 存储会话标题、归属用户、可选知识库绑定 |
-| `chat_messages` | 存储会话中的所有消息、token 信息、来源引用 |
+| 集合 / 存储       | 作用                                             |
+| ----------------- | ------------------------------------------------ |
+| `users`           | 存储用户、密码、状态、refreshToken、最近登录时间 |
+| `knowledge_bases` | 存储知识库名称、描述、归属用户                   |
+| `documents`       | 存储文档元信息、原文内容或对象存储 key           |
+| `document_chunks` | 存储切分后的文本片段和定位信息                   |
+| 向量集合          | 存储文档片段向量，供 MongoDB 向量检索使用        |
+| `chat_sessions`   | 存储会话标题、归属用户、可选知识库绑定           |
+| `chat_messages`   | 存储会话中的所有消息、token 信息、来源引用       |
 
 ## RAG 问答链路
 
@@ -238,50 +238,85 @@
 
 ### MongoDB
 
-| 变量名 | 说明 |
-| --- | --- |
-| `MONGODB_URI` | MongoDB 连接串 |
-| `MONGODB_VECTOR_COLLECTION` | 向量集合名称 |
-| `MONGODB_VECTOR_INDEX` | 向量索引名称 |
-| `MONGODB_SERVER_API_STRICT` | MongoDB Server API strict 配置 |
-| `MONGODB_SERVER_API_DEPRECATION_ERRORS` | MongoDB Server API deprecation errors 配置 |
+[MongoDB](https://www.mongodb.com/pricing) 提供了免费的额度，用于在云环境中学习和探索 MongoDB
+
+#### 连接
+
+![MongoDB Atlas 集群概览页中的连接入口](readme-assets/mongodb-atlas-cluster-overview-connect.png)
+![MongoDB Atlas 连接弹窗中选择 Driver 的步骤](readme-assets/mongodb-atlas-connect-select-driver.png)
+![MongoDB Atlas 中复制 Mongoose 连接串](readme-assets/mongodb-atlas-copy-mongoose-connection-string.png)
+
+#### 向量的创建：
+
+![MongoDB Atlas 中创建 Vector Search 索引的入口](readme-assets/mongodb-atlas-create-vector-search-index.png)
+![MongoDB Atlas Vector Search 索引配置示例](readme-assets/mongodb-atlas-vector-index-configuration.png)
+
+| 变量名                                  | 字段类型  | 默认值                                         | 是否必填 | 说明                                       |
+| --------------------------------------- | --------- | ---------------------------------------------- | -------- | ------------------------------------------ |
+| `MONGODB_URI`                           | `string`  | `mongodb://localhost:27017/knowledge-base-api` | 否       | MongoDB 连接串                             |
+| `MONGODB_DB_NAME`                       | `string`  | `knowledge`                                    | 否       | MongoDB 数据库名称                         |
+| `MONGODB_VECTOR_COLLECTION`             | `string`  | `document_chunk_vectors`                       | 否       | 向量集合名称                               |
+| `MONGODB_VECTOR_INDEX`                  | `string`  | `document_chunk_vector_index`                  | 否       | 向量索引名称                               |
+| `MONGODB_SERVER_API_STRICT`             | `boolean` | `false`                                        | 否       | MongoDB Server API strict 配置             |
+| `MONGODB_SERVER_API_DEPRECATION_ERRORS` | `boolean` | `true`                                         | 否       | MongoDB Server API deprecation errors 配置 |
+
+### 服务启动
+
+| 变量名 | 字段类型 | 默认值 | 是否必填 | 说明         |
+| ------ | -------- | ------ | -------- | ------------ |
+| `PORT` | `number` | `3000` | 否       | 服务监听端口 |
 
 ### JWT
 
-| 变量名 | 说明 |
-| --- | --- |
-| `JWT_ACCESS_SECRET` | access token 密钥 |
-| `JWT_ACCESS_EXPIRESIN` | access token 过期时间 |
-| `JWT_REFRESH_SECRET` | refresh token 密钥 |
-| `JWT_REFRESH_EXPIRESIN` | refresh token 过期时间 |
+| 变量名                  | 字段类型 | 默认值                       | 是否必填 | 说明                   |
+| ----------------------- | -------- | ---------------------------- | -------- | ---------------------- |
+| `JWT_ACCESS_SECRET`     | `string` | `knowledge-base-api-access`  | 否       | access token 密钥      |
+| `JWT_ACCESS_EXPIRESIN`  | `string` | `15m`                        | 否       | access token 过期时间  |
+| `JWT_REFRESH_SECRET`    | `string` | `knowledge-base-api-refresh` | 否       | refresh token 密钥     |
+| `JWT_REFRESH_EXPIRESIN` | `string` | `30d`                        | 否       | refresh token 过期时间 |
 
 ### Chat 模型
 
-| 变量名 | 说明 |
-| --- | --- |
-| `OPENAI_CHAT_MODEL` | 聊天模型名称 |
-| `OPENAI_CHAT_API_KEY` | 聊天模型 API Key |
-| `OPENAI_CHAT_BASE_URL` | 聊天模型网关地址 |
+需要能够支持 OpenAI 兼容 Responses 接口，推荐：[阿里云百炼（有免费额度）](https://bailian.console.aliyun.com/cn-beijing?tab=api#/api/?type=model&url=3016539)
+
+| 变量名                 | 字段类型 | 默认值 | 是否必填 | 说明             |
+| ---------------------- | -------- | ------ | -------- | ---------------- |
+| `OPENAI_CHAT_MODEL`    | `string` | `-`    | 是       | 聊天模型名称     |
+| `OPENAI_CHAT_API_KEY`  | `string` | `-`    | 是       | 聊天模型 API Key |
+| `OPENAI_CHAT_BASE_URL` | `string` | `-`    | 是       | 聊天模型网关地址 |
 
 ### Embedding 模型
 
-| 变量名 | 说明 |
-| --- | --- |
-| `OPENAI_EMBEDDING_MODEL` | 向量模型名称 |
-| `OPENAI_EMBEDDING_API_KEY` | 向量模型 API Key |
-| `OPENAI_EMBEDDING_BASE_URL` | 向量模型网关地址 |
-| `OPENAI_EMBEDDING_BATCH_SIZE` | 批量向量化大小，代码中上限为 10 |
-| `EMBED_QUERY_TIMEOUT_MS` | 问题向量生成超时时间 |
-| `VECTOR_SEARCH_TIMEOUT_MS` | 向量检索超时时间 |
+需要能够支持 OpenAI 兼容 Embedding 接口，推荐：[阿里云百炼（有免费额度）](https://bailian.console.aliyun.com/cn-beijing?tab=api#/api/?type=model&url=2846066)
+
+| 变量名                        | 字段类型 | 默认值  | 是否必填 | 说明                             |
+| ----------------------------- | -------- | ------- | -------- | -------------------------------- |
+| `OPENAI_EMBEDDING_MODEL`      | `string` | `-`     | 是       | 向量模型名称                     |
+| `OPENAI_EMBEDDING_API_KEY`    | `string` | `-`     | 是       | 向量模型 API Key                 |
+| `OPENAI_EMBEDDING_BASE_URL`   | `string` | `-`     | 是       | 向量模型网关地址                 |
+| `OPENAI_EMBEDDING_BATCH_SIZE` | `number` | `10`    | 否       | 批量向量化大小，代码中上限为 10  |
+| `EMBED_QUERY_TIMEOUT_MS`      | `number` | `12000` | 否       | 问题向量生成超时时间，单位为毫秒 |
+| `VECTOR_SEARCH_TIMEOUT_MS`    | `number` | `8000`  | 否       | 向量检索超时时间，单位为毫秒     |
 
 ### 对象存储
 
-| 变量名 | 说明 |
-| --- | --- |
-| `AWS_ENDPOINT` | S3 兼容服务 endpoint |
-| `AWS_ACCESS_KEY_ID` | Access Key |
-| `AWS_SECRET_ACCESS_KEY` | Secret Key |
-| `S3_BUCKET_NAME` | Bucket 名称 |
+使用的是 cloudflare 提供的 S3 存储，也提供了免费额度使用，但需要先添加 visa 卡，才能使用
+
+注意权限问题
+
+![Cloudflare R2 概览页中进入 API Token 管理](readme-assets/cloudflare-r2-overview-manage-api-tokens.png)
+![Cloudflare R2 中创建 API Token 的入口](readme-assets/cloudflare-r2-create-api-token.png)
+![Cloudflare R2 中查看 S3 凭证与 Endpoint](readme-assets/cloudflare-r2-s3-credentials-and-endpoint.png)
+![Cloudflare R2 中创建 Bucket 的入口](readme-assets/cloudflare-r2-create-bucket.png)
+
+
+
+| 变量名                  | 字段类型 | 默认值 | 是否必填   | 说明                 |
+| ----------------------- | -------- | ------ | ---------- | -------------------- |
+| `AWS_ENDPOINT`          | `string` | `-`    | 按功能必填 | S3 兼容服务 endpoint |
+| `AWS_ACCESS_KEY_ID`     | `string` | `-`    | 按功能必填 | Access Key           |
+| `AWS_SECRET_ACCESS_KEY` | `string` | `-`    | 按功能必填 | Secret Key           |
+| `S3_BUCKET_NAME`        | `string` | `-`    | 按功能必填 | Bucket 名称          |
 
 ## 本地启动
 
@@ -326,7 +361,7 @@ pnpm test:cov
 
 ## 开发注意事项
 
-- `app.module.ts` 中固定使用数据库名 `knowledge`，部署时需要保证 MongoDB 中该库可用。
+- 默认数据库名为 `knowledge`，可通过 `MONGODB_DB_NAME` 覆盖。
 - 如果没有配置对象存储，就不要上传 `pdf`、`doc`、`docx` 这类需要保留原文件的文档。
 - 要启用知识库问答，MongoDB 侧必须先创建好向量索引，并与 `MONGODB_VECTOR_INDEX` 对应。
 - `/chat/ask` 是 `SSE` 流式接口，前端不能按普通 JSON 请求处理。
