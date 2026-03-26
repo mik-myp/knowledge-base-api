@@ -100,7 +100,7 @@ export class ChatService {
    * @returns 返回截断并清洗后的会话标题。
    */
   private buildSessionTitle(question: string) {
-    const title = question.trim().replace(/\s+/g, ' ').slice(0, 50);
+    const title = question.slice(0, 50);
     return title || '新会话';
   }
 
@@ -114,7 +114,7 @@ export class ChatService {
       .reverse()
       .find(
         (message) =>
-          message.role === ChatMessageType.Human && message.content.trim(),
+          message.role === ChatMessageType.Human,
       );
 
     if (!latestHumanMessage) {
@@ -628,7 +628,7 @@ export class ChatService {
       knowledgeBaseId: createChatDto.knowledgeBaseId
         ? toObjectId(createChatDto.knowledgeBaseId)
         : undefined,
-      title: createChatDto.title?.trim() || '新会话',
+      title: createChatDto.title || '新会话',
     });
 
     await session.save();
@@ -664,11 +664,7 @@ export class ChatService {
     id: string,
     updateChatDto: UpdateChatSessionDto,
   ) {
-    const title = updateChatDto.title.trim();
-
-    if (!title) {
-      throw new BadRequestException('标题不能为空');
-    }
+    const title = updateChatDto.title;
 
     const chatSession = await this.chatSessionModel
       .findOneAndUpdate(
@@ -852,11 +848,6 @@ export class ChatService {
               );
             },
           });
-
-          console.log(
-            '🚀 ~ chat.service.ts:856 ~ ChatService ~ askStream ~ hits:',
-            hits,
-          );
 
           systemPrompt = this.buildSystemPrompt(this.buildContextText(hits));
           sources.push(

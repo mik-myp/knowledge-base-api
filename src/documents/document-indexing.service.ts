@@ -212,10 +212,6 @@ export class DocumentIndexingService {
       ];
     }
 
-    if (params.extension === 'doc') {
-      throw new BadRequestException('当前仅支持解析 docx，请先转换为 docx');
-    }
-
     throw new BadRequestException(`不支持的扩展名: ${params.extension}`);
   }
 

@@ -53,7 +53,7 @@ describe('ChatController', () => {
       }) as any,
     );
 
-    controller.ask(request as any, askDto, response as any);
+    controller.askStream(request as any, askDto, response as any);
 
     expect(chatService.askStream).toHaveBeenCalledWith('user-id', askDto);
   });

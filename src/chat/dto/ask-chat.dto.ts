@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
+import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
@@ -10,10 +10,6 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import {
-  API_CONSTRAINTS,
-  trimOptionalStringValue,
-} from 'src/contracts/api-contracts';
 import { AskChatMessageDto } from './ask-chat-message.dto';
 
 /**
@@ -41,7 +37,6 @@ export class AskChatDto {
     description: 'Existing session id for follow-up questions.',
     example: '507f1f77bcf86cd799439011',
   })
-  @Transform(({ value }) => trimOptionalStringValue(value))
   @IsOptional()
   @IsMongoId({ message: 'sessionId 必须是合法 ObjectId' })
   sessionId?: string;
@@ -53,7 +48,6 @@ export class AskChatDto {
     description: 'Knowledge base id when creating a knowledge-based chat.',
     example: '507f1f77bcf86cd799439012',
   })
-  @Transform(({ value }) => trimOptionalStringValue(value))
   @IsOptional()
   @IsMongoId({ message: 'knowledgeBaseId 必须是合法 ObjectId' })
   knowledgeBaseId?: string;
@@ -64,13 +58,13 @@ export class AskChatDto {
   @ApiPropertyOptional({
     description: 'Top K chunks returned by semantic search.',
     example: 5,
-    minimum: API_CONSTRAINTS.chat.askTopKMin,
-    maximum: API_CONSTRAINTS.chat.askTopKMax,
+    minimum: 1,
+    maximum: 10,
   })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(API_CONSTRAINTS.chat.askTopKMin)
-  @Max(API_CONSTRAINTS.chat.askTopKMax)
+  @Min(1)
+  @Max(10)
   topK?: number;
 }

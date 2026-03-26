@@ -1,7 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
 import { IsString, MaxLength, MinLength } from 'class-validator';
-import { API_CONSTRAINTS, trimStringValue } from 'src/contracts/api-contracts';
 
 /**
  * 定义更新对话会话的 DTO 结构。
@@ -14,12 +12,11 @@ export class UpdateChatSessionDto {
     description: 'New session title.',
     example: 'Updated session title',
   })
-  @Transform(({ value }) => trimStringValue(value))
   @IsString()
-  @MinLength(API_CONSTRAINTS.chat.sessionTitleMinLength, {
+  @MinLength(1, {
     message: 'title 不能为空',
   })
-  @MaxLength(API_CONSTRAINTS.chat.sessionTitleMaxLength, {
+  @MaxLength(50, {
     message: 'title 长度不能超过 50 个字符',
   })
   title: string;

@@ -83,16 +83,6 @@ export type SerializedChatMessage = {
 };
 
 /**
- * 定义对话问答响应的类型结构。
- */
-export type ChatAskResponse = {
-  sessionId: string;
-  answer: string;
-  message: SerializedChatMessage;
-  sources: ChatMessageSource[];
-};
-
-/**
  * 定义对话问答流式分片的类型结构。
  */
 export type ChatAskStreamChunk = {

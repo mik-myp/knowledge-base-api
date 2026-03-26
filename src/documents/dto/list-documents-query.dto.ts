@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
+import { Type } from 'class-transformer';
 import {
   IsInt,
   IsMongoId,
@@ -8,10 +8,6 @@ import {
   Max,
   Min,
 } from 'class-validator';
-import {
-  API_CONSTRAINTS,
-  trimOptionalStringValue,
-} from 'src/contracts/api-contracts';
 
 /**
  * 定义列表文档查询参数的 DTO 结构。
@@ -28,8 +24,8 @@ export class ListDocumentsQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'page 必须是整数' })
-  @Min(API_CONSTRAINTS.document.pageMin, { message: 'page 不能小于 1' })
-  page?: number = API_CONSTRAINTS.document.pageDefault;
+  @Min(1, { message: 'page 不能小于 1' })
+  page?: number = 1;
 
   /**
    * 保存每页数量。
@@ -43,13 +39,13 @@ export class ListDocumentsQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'pageSize 必须是整数' })
-  @Min(API_CONSTRAINTS.document.pageSizeMin, {
+  @Min(1, {
     message: 'pageSize 不能小于 1',
   })
-  @Max(API_CONSTRAINTS.document.pageSizeMax, {
+  @Max(50, {
     message: 'pageSize 不能大于 50',
   })
-  pageSize?: number = API_CONSTRAINTS.document.pageSizeDefault;
+  pageSize?: number = 10;
 
   /**
    * 保存知识库 ID。
@@ -58,7 +54,6 @@ export class ListDocumentsQueryDto {
     description: '按知识库筛选',
     example: '507f1f77bcf86cd799439013',
   })
-  @Transform(({ value }) => trimOptionalStringValue(value))
   @IsOptional()
   @IsMongoId({ message: 'knowledgeBaseId 必须是合法 ObjectId' })
   knowledgeBaseId?: string;
@@ -70,7 +65,6 @@ export class ListDocumentsQueryDto {
     description: '按文件名搜索',
     example: '项目说明',
   })
-  @Transform(({ value }) => trimOptionalStringValue(value))
   @IsOptional()
   @IsString({ message: 'keyword 必须是字符串' })
   keyword?: string;

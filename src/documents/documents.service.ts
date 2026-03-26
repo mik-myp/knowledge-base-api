@@ -37,17 +37,15 @@ import type {
  */
 const SUPPORTED_UPLOAD_EXTENSIONS = new Set([
   'pdf',
-  'doc',
   'docx',
   'md',
-  'markdown',
   'txt',
 ]);
 
 /**
  * 记录可以直接按文本内容解析的扩展名集合。
  */
-export const TEXT_UPLOAD_EXTENSIONS = new Set(['md', 'markdown', 'txt']);
+export const TEXT_UPLOAD_EXTENSIONS = new Set(['md', 'txt']);
 
 /**
  * 负责文档相关业务处理的服务。
@@ -171,9 +169,9 @@ export class DocumentsService {
       filters.knowledgeBaseId = toObjectId(query.knowledgeBaseId);
     }
 
-    if (query.keyword?.trim()) {
+    if (query.keyword) {
       filters.originalName = {
-        $regex: query.keyword.trim(),
+        $regex: query.keyword,
         $options: 'i',
       };
     }
@@ -231,16 +229,15 @@ export class DocumentsService {
     originalName: string,
     extension: string,
   ): string {
-    const trimmedOriginalName = originalName.trim();
-    const normalizedExtension = extension.trim().toLowerCase();
+    const normalizedExtension = extension.toLowerCase();
 
-    if (!trimmedOriginalName) {
+    if (!originalName) {
       return `document.${normalizedExtension}`;
     }
 
-    return trimmedOriginalName.toLowerCase().endsWith(`.${normalizedExtension}`)
-      ? trimmedOriginalName
-      : `${trimmedOriginalName}.${normalizedExtension}`;
+    return originalName.toLowerCase().endsWith(`.${normalizedExtension}`)
+      ? originalName
+      : `${originalName}.${normalizedExtension}`;
   }
 
   /**
@@ -251,7 +248,7 @@ export class DocumentsService {
   private assertSupportedUploadExtension(extension: string): void {
     if (!SUPPORTED_UPLOAD_EXTENSIONS.has(extension)) {
       throw new BadRequestException(
-        '当前仅支持上传 md、txt、pdf、doc、docx 文件',
+        '当前仅支持上传 md、pdf、txt、docx 文件',
       );
     }
   }
@@ -659,7 +656,7 @@ export class DocumentsService {
         knowledgeBaseId: knowledgeBaseObjectId,
         sourceType: DocumentSourceType.Editor,
         content: editorDocument.content,
-        originalName: editorDocument.name.trim(),
+        originalName: editorDocument.name,
         extension: 'md',
         mimeType: 'text/markdown',
         size: Buffer.byteLength(editorDocument.content, 'utf8'),
@@ -827,9 +824,7 @@ export class DocumentsService {
     userId: string,
     documentIds: string[],
   ): Promise<RemoveByDocumentIdsResult> {
-    const normalizedDocumentIds = Array.from(
-      new Set(documentIds.filter((id) => Boolean(id?.trim()))),
-    );
+    const normalizedDocumentIds = Array.from(new Set(documentIds.filter(Boolean)));
 
     if (!normalizedDocumentIds.length) {
       return {

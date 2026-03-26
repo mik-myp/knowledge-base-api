@@ -1,11 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
 import { IsIn, IsOptional, IsString, MinLength } from 'class-validator';
-import {
-  CHAT_REQUEST_MESSAGE_ROLES,
-  trimOptionalStringValue,
-  trimStringValue,
-} from 'src/contracts/api-contracts';
 import {
   ChatMessageType,
   type ChatRequestMessageRole,
@@ -23,7 +17,7 @@ export class AskChatMessageDto {
     enum: [ChatMessageType.System, ChatMessageType.Human, ChatMessageType.Tool],
     example: ChatMessageType.Human,
   })
-  @IsIn(CHAT_REQUEST_MESSAGE_ROLES)
+  @IsIn([ChatMessageType.System, ChatMessageType.Human, ChatMessageType.Tool])
   role: ChatRequestMessageRole;
 
   /**
@@ -33,7 +27,6 @@ export class AskChatMessageDto {
     description: 'Message content.',
     example: 'Please explain this concept.',
   })
-  @Transform(({ value }) => trimStringValue(value))
   @IsString()
   @MinLength(1, { message: 'content 不能为空' })
   content: string;
@@ -45,7 +38,6 @@ export class AskChatMessageDto {
     description: 'Optional message name.',
     example: 'knowledge-tool',
   })
-  @Transform(({ value }) => trimOptionalStringValue(value))
   @IsOptional()
   @IsString()
   name?: string;
@@ -57,7 +49,6 @@ export class AskChatMessageDto {
     description: 'Optional tool call id.',
     example: 'call_123',
   })
-  @Transform(({ value }) => trimOptionalStringValue(value))
   @IsOptional()
   @IsString()
   toolCallId?: string;

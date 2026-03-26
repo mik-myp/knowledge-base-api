@@ -121,7 +121,7 @@ export class ChatController {
    * @param res Express 响应对象，用于持续写出流式结果。
    * @returns 响应结束前不返回额外数据。
    */
-  @Post('/ask')
+  @Post('/ask-stream')
   @ApiOperation({ summary: 'Start an AI answer request with SSE streaming' })
   @ApiBody({ type: AskChatDto })
   @ApiProduces('text/event-stream')
@@ -131,7 +131,7 @@ export class ChatController {
   })
   @ApiBadRequestResponse({ description: 'Request payload is invalid' })
   @ApiUnauthorizedResponse({ description: 'Missing or invalid access token' })
-  ask(
+  askStream(
     @Request() req: UserRequest,
     @Body() askDto: AskChatDto,
     @Res() res: Response,

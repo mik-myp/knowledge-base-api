@@ -339,7 +339,7 @@ describe('DocumentsService', () => {
           knowledgeBaseId,
         },
       ),
-    ).rejects.toThrow('当前仅支持上传 md、txt、pdf、doc、docx 文件');
+    ).rejects.toThrow('当前仅支持上传 md、pdf、txt、docx 文件');
 
     expect(storageService.uploadFile).not.toHaveBeenCalled();
     expect(documentModel).not.toHaveBeenCalled();
