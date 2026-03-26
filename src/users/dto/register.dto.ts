@@ -10,7 +10,7 @@ export class RegisterDto {
    */
   @ApiProperty({
     description: '用户邮箱',
-    example: 'alice@example.com',
+    example: 'zhangsan@example.com',
     maxLength: 100,
   })
   @IsEmail({}, { message: '请输入合法邮箱' })
@@ -42,13 +42,13 @@ export class RegisterDto {
    */
   @ApiProperty({
     description: '用户昵称',
-    example: 'Alice',
+    example: '张三',
     minLength: 2,
     maxLength: 30,
   })
   @IsString()
   @MinLength(2, {
-    message: '昵称至少 2 位',
+    message: '昵称至少 2 个字符',
   })
   @MaxLength(30, {
     message: '昵称长度不能超过 30 个字符',

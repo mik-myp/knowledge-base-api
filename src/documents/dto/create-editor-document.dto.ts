@@ -20,7 +20,7 @@ export class CreateEditorDocumentDto {
    */
   @ApiProperty({
     description: '编辑器文档标题',
-    example: 'NestJS 鉴权设计',
+    example: '后端鉴权设计方案',
   })
   @IsString({ message: 'name 必须是字符串' })
   @MinLength(1, {

@@ -112,10 +112,7 @@ export class ChatService {
   private getLatestHumanMessage(dto: AskChatDto) {
     const latestHumanMessage = [...dto.messages]
       .reverse()
-      .find(
-        (message) =>
-          message.role === ChatMessageType.Human,
-      );
+      .find((message) => message.role === ChatMessageType.Human);
 
     if (!latestHumanMessage) {
       throw new BadRequestException('messages 中至少需要一条 human 消息');
@@ -727,6 +724,7 @@ export class ChatService {
       let currentSessionId: string | undefined;
       let progressTimer: ReturnType<typeof setInterval> | undefined;
       let progressIndex = 0;
+      const abortController = new AbortController();
 
       const stopProgressHeartbeat = (): void => {
         if (progressTimer) {
@@ -880,13 +878,20 @@ export class ChatService {
         );
 
         const model = this.langchainService.createChatModel();
-        const stream = await model.stream([
-          new SystemMessage(systemPrompt),
-          ...historyMessages.map((message) => this.toLangChainMessage(message)),
-        ]);
+        const stream = await model.stream(
+          [
+            new SystemMessage(systemPrompt),
+            ...historyMessages.map((message) =>
+              this.toLangChainMessage(message),
+            ),
+          ],
+          {
+            signal: abortController.signal,
+          },
+        );
 
         let answer = '';
-        let lastChunk: AIMessageChunk | null = null;
+        let fullMessage: AIMessageChunk | undefined;
 
         for await (const chunk of stream) {
           if (cancelled) {
@@ -894,8 +899,13 @@ export class ChatService {
             return;
           }
 
-          lastChunk = chunk;
-          answer += this.extractModelText(chunk.content);
+          if (!fullMessage) {
+            fullMessage = chunk;
+          } else {
+            fullMessage = fullMessage.concat(chunk);
+          }
+
+          answer = this.extractModelText(fullMessage.content);
 
           if (answer) {
             stopProgressHeartbeat();
@@ -916,9 +926,9 @@ export class ChatService {
           userId,
           sessionId: session.id,
           answer: normalizedAnswer,
-          responseMetadata: lastChunk?.response_metadata,
-          usageMetadata: lastChunk?.usage_metadata,
-          toolCalls: lastChunk?.tool_calls,
+          responseMetadata: fullMessage?.response_metadata,
+          usageMetadata: fullMessage?.usage_metadata,
+          toolCalls: fullMessage?.tool_calls,
           sources,
         });
 
@@ -944,6 +954,10 @@ export class ChatService {
       })().catch((error: unknown) => {
         stopProgressHeartbeat();
 
+        if (cancelled) {
+          return;
+        }
+
         const errorMessage = this.resolveStreamErrorMessage(error);
 
         this.logger.error(
@@ -968,6 +982,7 @@ export class ChatService {
 
       return () => {
         cancelled = true;
+        abortController.abort();
         stopProgressHeartbeat();
       };
     });

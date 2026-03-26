@@ -10,7 +10,7 @@ export class LoginDto {
    */
   @ApiProperty({
     description: '用户邮箱',
-    example: 'alice@example.com',
+    example: 'zhangsan@example.com',
     maxLength: 100,
   })
   @IsEmail({}, { message: '请输入合法邮箱' })

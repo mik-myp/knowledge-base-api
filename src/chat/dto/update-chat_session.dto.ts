@@ -9,8 +9,8 @@ export class UpdateChatSessionDto {
    * 保存标题。
    */
   @ApiProperty({
-    description: 'New session title.',
-    example: 'Updated session title',
+    description: '新的会话标题',
+    example: '更新后的会话标题',
   })
   @IsString()
   @MinLength(1, {

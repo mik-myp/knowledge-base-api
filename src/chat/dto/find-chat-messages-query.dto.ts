@@ -9,9 +9,9 @@ export class FindChatMessagesQueryDto {
    * 保存会话 ID。
    */
   @ApiProperty({
-    description: 'Session id.',
+    description: '会话 ID',
     example: '507f1f77bcf86cd799439011',
   })
-  @IsMongoId({ message: 'sessionId 必须是合法 ObjectId' })
+  @IsMongoId({ message: 'sessionId 必须是合法的 ObjectId' })
   sessionId: string;
 }

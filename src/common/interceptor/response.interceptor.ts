@@ -3,12 +3,14 @@ https://docs.nestjs.com/interceptors#interceptors
 */
 
 import {
+  CallHandler,
+  ExecutionContext,
+  HttpStatus,
   Injectable,
   NestInterceptor,
-  ExecutionContext,
-  CallHandler,
-  HttpStatus,
+  StreamableFile,
 } from '@nestjs/common';
+import { SSE_METADATA } from '@nestjs/common/constants';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 
@@ -29,7 +31,7 @@ export interface ResponseFormat<T = any> {
 @Injectable()
 export class ResponseInterceptor<T> implements NestInterceptor<
   T,
-  ResponseFormat<T>
+  ResponseFormat<T> | T
 > {
   /**
    * 拦截控制器响应并补充统一字段。
@@ -40,13 +42,20 @@ export class ResponseInterceptor<T> implements NestInterceptor<
   intercept(
     context: ExecutionContext,
     next: CallHandler,
-  ): Observable<ResponseFormat<T>> {
-    const ctx = context.switchToHttp();
-    const _response = ctx.getResponse();
-    const request = ctx.getRequest();
+  ): Observable<ResponseFormat<T> | T> {
+    const request = context.switchToHttp().getRequest();
+    const isSse = Reflect.getMetadata(SSE_METADATA, context.getHandler());
+
+    if (isSse) {
+      return next.handle();
+    }
 
     return next.handle().pipe(
       map((data) => {
+        if (data instanceof StreamableFile) {
+          return data;
+        }
+
         // 处理空数据
         if (data === null || data === undefined) {
           return {

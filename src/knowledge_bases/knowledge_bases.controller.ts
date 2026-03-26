@@ -31,11 +31,10 @@ import type {
   KnowledgeBaseListResult,
   KnowledgeBaseRecord,
 } from './types/knowledge-bases.types';
-
 /**
  * 负责知识库Bases相关接口处理的控制器。
  */
-@ApiTags('knowledge-bases')
+@ApiTags('知识库')
 @ApiBearerAuth()
 @Controller('knowledge-bases')
 export class KnowledgeBasesController {
@@ -51,7 +50,7 @@ export class KnowledgeBasesController {
   @ApiOperation({ summary: '创建知识库' })
   @ApiBody({ type: CreateKnowledgeBaseDto })
   @ApiOkResponse({ description: '知识库创建成功。' })
-  @ApiUnauthorizedResponse({ description: '未提供有效 accessToken' })
+  @ApiUnauthorizedResponse({ description: '未提供有效访问令牌' })
   create(
     @Request() req: UserRequest,
     @Body() createKnowledgeBaseDto: CreateKnowledgeBaseDto,
@@ -83,7 +82,7 @@ export class KnowledgeBasesController {
     example: 10,
   })
   @ApiOkResponse({ description: '知识库列表获取成功。' })
-  @ApiUnauthorizedResponse({ description: '未提供有效 accessToken' })
+  @ApiUnauthorizedResponse({ description: '未提供有效访问令牌' })
   findAll(
     @Request() req: UserRequest,
     @Query() query: ListKnowledgeBasesQueryDto,
@@ -101,7 +100,7 @@ export class KnowledgeBasesController {
   @ApiOperation({ summary: '获取当前用户的单个知识库详情' })
   @ApiParam({ name: 'id', description: '知识库 ID' })
   @ApiOkResponse({ description: '知识库详情获取成功。' })
-  @ApiUnauthorizedResponse({ description: '未提供有效 accessToken' })
+  @ApiUnauthorizedResponse({ description: '未提供有效访问令牌' })
   @ApiBadRequestResponse({ description: '知识库 ID 格式错误' })
   @ApiNotFoundResponse({ description: '知识库不存在' })
   findOne(
@@ -123,7 +122,7 @@ export class KnowledgeBasesController {
   @ApiParam({ name: 'id', description: '知识库 ID' })
   @ApiBody({ type: UpdateKnowledgeBaseDto })
   @ApiOkResponse({ description: '知识库更新成功。' })
-  @ApiUnauthorizedResponse({ description: '未提供有效 accessToken' })
+  @ApiUnauthorizedResponse({ description: '未提供有效访问令牌' })
   @ApiBadRequestResponse({ description: '知识库 ID 格式错误' })
   @ApiNotFoundResponse({ description: '知识库不存在' })
   update(
@@ -148,7 +147,7 @@ export class KnowledgeBasesController {
   @ApiOperation({ summary: '删除当前用户的知识库' })
   @ApiParam({ name: 'id', description: '知识库 ID' })
   @ApiOkResponse({ description: '知识库删除成功，同时清理关联文档文件。' })
-  @ApiUnauthorizedResponse({ description: '未提供有效 accessToken' })
+  @ApiUnauthorizedResponse({ description: '未提供有效访问令牌' })
   @ApiBadRequestResponse({ description: '知识库 ID 格式错误' })
   @ApiNotFoundResponse({ description: '知识库不存在' })
   remove(

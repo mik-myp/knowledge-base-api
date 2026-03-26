@@ -15,19 +15,19 @@ export class CreateChatSessionDto {
    * 保存知识库 ID。
    */
   @ApiPropertyOptional({
-    description: 'Knowledge base id. Omit it to create a normal chat session.',
+    description: '知识库 ID，不传则创建普通对话会话',
     example: '507f1f77bcf86cd799439011',
   })
   @IsOptional()
-  @IsMongoId({ message: 'knowledgeBaseId 必须是合法 ObjectId' })
+  @IsMongoId({ message: 'knowledgeBaseId 必须是合法的 ObjectId' })
   knowledgeBaseId?: string;
 
   /**
    * 保存标题。
    */
   @ApiPropertyOptional({
-    description: 'Optional session title.',
-    example: 'NestJS session',
+    description: '可选的会话标题',
+    example: '技术方案讨论',
   })
   @IsOptional()
   @IsString()

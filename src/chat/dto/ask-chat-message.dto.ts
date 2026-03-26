@@ -13,7 +13,7 @@ export class AskChatMessageDto {
    * 保存role。
    */
   @ApiProperty({
-    description: 'Message role.',
+    description: '消息角色',
     enum: [ChatMessageType.System, ChatMessageType.Human, ChatMessageType.Tool],
     example: ChatMessageType.Human,
   })
@@ -24,8 +24,8 @@ export class AskChatMessageDto {
    * 保存内容。
    */
   @ApiProperty({
-    description: 'Message content.',
-    example: 'Please explain this concept.',
+    description: '消息内容',
+    example: '请解释一下这个概念。',
   })
   @IsString()
   @MinLength(1, { message: 'content 不能为空' })
@@ -35,8 +35,8 @@ export class AskChatMessageDto {
    * 保存名称。
    */
   @ApiPropertyOptional({
-    description: 'Optional message name.',
-    example: 'knowledge-tool',
+    description: '可选的消息名称',
+    example: '知识库工具',
   })
   @IsOptional()
   @IsString()
@@ -46,8 +46,8 @@ export class AskChatMessageDto {
    * 保存工具调用Id。
    */
   @ApiPropertyOptional({
-    description: 'Optional tool call id.',
-    example: 'call_123',
+    description: '可选的工具调用 ID',
+    example: '调用_123',
   })
   @IsOptional()
   @IsString()

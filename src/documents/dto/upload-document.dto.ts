@@ -9,9 +9,9 @@ export class UploadDocumentDto {
    * 保存知识库 ID。
    */
   @ApiProperty({
-    description: 'Knowledge base id.',
+    description: '知识库 ID',
     example: '507f1f77bcf86cd799439011',
   })
-  @IsMongoId({ message: 'knowledgeBaseId 必须是合法 ObjectId' })
+  @IsMongoId({ message: 'knowledgeBaseId 必须是合法的 ObjectId' })
   knowledgeBaseId: string;
 }

@@ -1,4 +1,7 @@
-import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
+import {
+  MarkdownTextSplitter,
+  RecursiveCharacterTextSplitter,
+} from '@langchain/textsplitters';
 import {
   BadRequestException,
   GatewayTimeoutException,
@@ -220,11 +223,32 @@ export class DocumentIndexingService {
    * @param documents 需要拆分的 LangChain 文档列表。
    * @returns 返回拆分后的文档片段列表。
    */
-  private async splitDocuments(documents: LangChainDocument[]) {
-    const splitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 1000,
-      chunkOverlap: 200,
-    });
+  private async splitDocuments(
+    extension: string,
+    documents: LangChainDocument[],
+  ) {
+    const splitter =
+      extension === 'md'
+        ? new MarkdownTextSplitter({
+            chunkSize: 1000,
+            chunkOverlap: 200,
+          })
+        : new RecursiveCharacterTextSplitter({
+            chunkSize: 1000,
+            chunkOverlap: 200,
+            separators: [
+              '\n\n',
+              '\n',
+              '。',
+              '！',
+              '？',
+              '；',
+              '，',
+              '、',
+              ' ',
+              '',
+            ],
+          });
 
     return splitter.splitDocuments(documents);
   }
@@ -306,7 +330,9 @@ export class DocumentIndexingService {
     const chunks: PreparedChunk[] = [];
 
     for (const sourceDocument of sourceDocuments) {
-      const splitDocuments = await this.splitDocuments([sourceDocument]);
+      const splitDocuments = await this.splitDocuments(params.extension, [
+        sourceDocument,
+      ]);
 
       chunks.push(
         ...this.buildPreparedChunksForSourceDocument(

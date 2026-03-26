@@ -30,11 +30,10 @@ import { AskChatDto } from './dto/ask-chat.dto';
 import { CreateChatSessionDto } from './dto/create-chat_session.dto';
 import { FindChatMessagesQueryDto } from './dto/find-chat-messages-query.dto';
 import { UpdateChatSessionDto } from './dto/update-chat_session.dto';
-
 /**
  * 负责对话相关接口处理的控制器。
  */
-@ApiTags('chat')
+@ApiTags('对话')
 @ApiBearerAuth()
 @Controller('chat')
 export class ChatController {
@@ -47,10 +46,10 @@ export class ChatController {
    * @returns 返回新建后的会话记录。
    */
   @Post('/sessions')
-  @ApiOperation({ summary: 'Create a chat session' })
+  @ApiOperation({ summary: '创建对话会话' })
   @ApiBody({ type: CreateChatSessionDto })
-  @ApiOkResponse({ description: 'Session created successfully' })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid access token' })
+  @ApiOkResponse({ description: '会话创建成功' })
+  @ApiUnauthorizedResponse({ description: '未提供有效访问令牌' })
   createSession(
     @Request() req: UserRequest,
     @Body() createChatDto: CreateChatSessionDto,
@@ -64,9 +63,9 @@ export class ChatController {
    * @returns 返回当前用户的会话列表。
    */
   @Get('/sessions')
-  @ApiOperation({ summary: 'List current user chat sessions' })
-  @ApiOkResponse({ description: 'Session list loaded successfully' })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid access token' })
+  @ApiOperation({ summary: '获取当前用户的会话列表' })
+  @ApiOkResponse({ description: '会话列表获取成功' })
+  @ApiUnauthorizedResponse({ description: '未提供有效访问令牌' })
   findAllSession(@Request() req: UserRequest) {
     return this.chatService.findAllSession(req.user.userId);
   }
@@ -79,14 +78,14 @@ export class ChatController {
    * @returns 返回更新后的会话记录。
    */
   @Patch('/sessions/:id')
-  @ApiOperation({ summary: 'Rename a chat session' })
-  @ApiParam({ name: 'id', description: 'Session id' })
+  @ApiOperation({ summary: '修改会话标题' })
+  @ApiParam({ name: 'id', description: '会话 ID' })
   @ApiBody({ type: UpdateChatSessionDto })
-  @ApiOkResponse({ description: 'Session updated successfully' })
+  @ApiOkResponse({ description: '会话更新成功' })
   @ApiBadRequestResponse({
-    description: 'Session id format is invalid or title is invalid',
+    description: '会话 ID 格式错误或标题不合法',
   })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid access token' })
+  @ApiUnauthorizedResponse({ description: '未提供有效访问令牌' })
   updateSession(
     @Request() req: UserRequest,
     @Param('id', ParseObjectIdPipe) id: string,
@@ -102,11 +101,11 @@ export class ChatController {
    * @returns 返回被删除的会话记录。
    */
   @Delete('/sessions/:id')
-  @ApiOperation({ summary: 'Delete a chat session' })
-  @ApiParam({ name: 'id', description: 'Session id' })
-  @ApiOkResponse({ description: 'Session and its messages were deleted' })
-  @ApiBadRequestResponse({ description: 'Session id format is invalid' })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid access token' })
+  @ApiOperation({ summary: '删除会话' })
+  @ApiParam({ name: 'id', description: '会话 ID' })
+  @ApiOkResponse({ description: '会话及其消息已删除' })
+  @ApiBadRequestResponse({ description: '会话 ID 格式错误' })
+  @ApiUnauthorizedResponse({ description: '未提供有效访问令牌' })
   removeSession(
     @Request() req: UserRequest,
     @Param('id', ParseObjectIdPipe) id: string,
@@ -122,15 +121,15 @@ export class ChatController {
    * @returns 响应结束前不返回额外数据。
    */
   @Post('/ask-stream')
-  @ApiOperation({ summary: 'Start an AI answer request with SSE streaming' })
+  @ApiOperation({ summary: '发起流式问答' })
   @ApiBody({ type: AskChatDto })
   @ApiProduces('text/event-stream')
   @ApiOkResponse({
     description:
-      'Returns text/event-stream. Each event chunk is a JSON payload string.',
+      '返回 text/event-stream，每个事件的数据字段都是一个 JSON 数据块。',
   })
-  @ApiBadRequestResponse({ description: 'Request payload is invalid' })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid access token' })
+  @ApiBadRequestResponse({ description: '请求参数不合法' })
+  @ApiUnauthorizedResponse({ description: '未提供有效访问令牌' })
   askStream(
     @Request() req: UserRequest,
     @Body() askDto: AskChatDto,
@@ -168,15 +167,15 @@ export class ChatController {
    * @returns 返回该会话的消息记录列表。
    */
   @Get('/messages')
-  @ApiOperation({ summary: 'Get messages for a chat session' })
+  @ApiOperation({ summary: '获取会话消息列表' })
   @ApiQuery({
     name: 'sessionId',
-    description: 'Session id',
+    description: '会话 ID',
     example: '507f1f77bcf86cd799439011',
   })
-  @ApiOkResponse({ description: 'Messages loaded successfully' })
-  @ApiBadRequestResponse({ description: 'sessionId format is invalid' })
-  @ApiUnauthorizedResponse({ description: 'Missing or invalid access token' })
+  @ApiOkResponse({ description: '消息列表获取成功' })
+  @ApiBadRequestResponse({ description: '会话 ID 格式错误' })
+  @ApiUnauthorizedResponse({ description: '未提供有效访问令牌' })
   findMessages(
     @Request() req: UserRequest,
     @Query() query: FindChatMessagesQueryDto,

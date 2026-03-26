@@ -3,10 +3,6 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
-/**
- * 初始化 Nest 应用、全局校验和 Swagger 文档。
- * @returns 应用启动完成后不返回额外内容。
- */
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
@@ -21,22 +17,20 @@ async function bootstrap() {
   app.enableCors({});
 
   const config = new DocumentBuilder()
-    .setTitle('Knowledge Base API')
-    .setDescription(
-      'API docs for users, knowledge bases, documents and AI chat modules.',
-    )
+    .setTitle('知识库接口服务')
+    .setDescription('提供用户、知识库、文档和 AI 对话模块的接口文档。')
     .setVersion('1.0.0')
     .addBearerAuth({
       type: 'http',
       scheme: 'bearer',
       bearerFormat: 'JWT',
-      description: 'Paste the access token here.',
+      description: '请在此处粘贴访问令牌。',
     })
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document, {
-    customSiteTitle: 'Knowledge Base API Docs',
+    customSiteTitle: '知识库接口文档',
     swaggerOptions: {
       persistAuthorization: true,
     },

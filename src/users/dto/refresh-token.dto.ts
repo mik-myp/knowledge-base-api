@@ -9,7 +9,7 @@ export class RefreshTokenDto {
    * 保存刷新令牌。
    */
   @ApiProperty({
-    description: '用于刷新 accessToken 的 refreshToken',
+    description: '用于刷新访问令牌的刷新令牌',
     example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.xxx.yyy',
     maxLength: 2000,
   })

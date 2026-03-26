@@ -20,11 +20,10 @@ import type {
   UserProfile,
   UserRequest,
 } from './types/users.types';
-
 /**
  * 负责用户相关接口处理的控制器。
  */
-@ApiTags('users')
+@ApiTags('用户')
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -38,7 +37,7 @@ export class UsersController {
   @Public()
   @ApiOperation({ summary: '用户注册' })
   @ApiBody({ type: RegisterDto })
-  @ApiOkResponse({ description: '注册成功并返回 accessToken / refreshToken' })
+  @ApiOkResponse({ description: '注册成功并返回访问令牌和刷新令牌' })
   @ApiConflictResponse({ description: '邮箱或用户名已存在' })
   async register(
     @Body() registerDto: RegisterDto,
@@ -56,7 +55,7 @@ export class UsersController {
   @Public()
   @ApiOperation({ summary: '用户登录' })
   @ApiBody({ type: LoginDto })
-  @ApiOkResponse({ description: '登录成功并返回 accessToken / refreshToken' })
+  @ApiOkResponse({ description: '登录成功并返回访问令牌和刷新令牌' })
   @ApiUnauthorizedResponse({ description: '邮箱或密码错误' })
   async login(
     @Body() loginDto: LoginDto,
@@ -72,12 +71,12 @@ export class UsersController {
    */
   @Post('refresh')
   @Public()
-  @ApiOperation({ summary: '刷新 accessToken' })
+  @ApiOperation({ summary: '刷新访问令牌' })
   @ApiBody({ type: RefreshTokenDto })
   @ApiOkResponse({
-    description: '刷新成功并返回新的 accessToken / refreshToken',
+    description: '刷新成功并返回新的访问令牌和刷新令牌',
   })
-  @ApiUnauthorizedResponse({ description: 'refreshToken 无效或已过期' })
+  @ApiUnauthorizedResponse({ description: '刷新令牌无效或已过期' })
   async refresh(
     @Body() refreshTokenDto: RefreshTokenDto,
   ): Promise<SuccessResponse<TokenPairResult>> {
@@ -93,8 +92,8 @@ export class UsersController {
   @Post('logout')
   @ApiBearerAuth()
   @ApiOperation({ summary: '退出登录' })
-  @ApiOkResponse({ description: '退出成功，并清除当前用户的 refreshToken' })
-  @ApiUnauthorizedResponse({ description: '登录状态无效或 accessToken 已过期' })
+  @ApiOkResponse({ description: '退出成功，并清除当前用户的刷新令牌' })
+  @ApiUnauthorizedResponse({ description: '登录状态无效或访问令牌已过期' })
   async logout(
     @Request() req: UserRequest,
   ): Promise<SuccessResponse<LogoutResult>> {
@@ -111,7 +110,7 @@ export class UsersController {
   @ApiBearerAuth()
   @ApiOperation({ summary: '获取当前登录用户信息' })
   @ApiOkResponse({ description: '成功返回当前用户资料' })
-  @ApiUnauthorizedResponse({ description: '登录状态无效或 accessToken 已过期' })
+  @ApiUnauthorizedResponse({ description: '登录状态无效或访问令牌已过期' })
   async me(@Request() req: UserRequest): Promise<SuccessResponse<UserProfile>> {
     const result = await this.usersService.me(req.user.userId);
     return ResponseUtil.success<UserProfile>(result);
