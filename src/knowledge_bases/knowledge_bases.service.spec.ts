@@ -225,6 +225,10 @@ describe('KnowledgeBasesService', () => {
     documentModel.find.mockReturnValue({
       exec: jest.fn().mockResolvedValue([{ id: 'doc-1' }, { id: 'doc-2' }]),
     });
+    documentsService.removeByDocumentIds.mockResolvedValue({
+      deletedCount: 2,
+      deletedIds: ['doc-1', 'doc-2'],
+    });
     chatSessionModel.find.mockReturnValue({
       exec: jest.fn().mockResolvedValue([{ id: knowledgeBaseId }]),
     });

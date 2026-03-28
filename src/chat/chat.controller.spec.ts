@@ -55,7 +55,7 @@ describe('ChatController', () => {
 
     controller.askStream(request as any, askDto, response as any);
 
-    expect(chatService.askStream).toHaveBeenCalledWith('user-id', askDto);
+    expect(chatService.askStream.mock.calls[0]).toEqual(['user-id', askDto]);
   });
 
   it('should delegate message query to service', async () => {
@@ -65,6 +65,6 @@ describe('ChatController', () => {
 
     await controller.findMessages(request as any, query);
 
-    expect(chatService.findMessages).toHaveBeenCalledWith('user-id', query);
+    expect(chatService.findMessages.mock.calls[0]).toEqual(['user-id', query]);
   });
 });

@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateKnowledgeBaseDto } from './dto/create-knowledge_base.dto';
 import { ListKnowledgeBasesQueryDto } from './dto/list-knowledge-bases-query.dto';
 import { UpdateKnowledgeBaseDto } from './dto/update-knowledge_base.dto';
@@ -201,7 +205,16 @@ export class KnowledgeBasesService {
     const documentIds = documents.map((document) => document.id);
 
     if (documentIds.length > 0) {
-      await this.documentsService.removeByDocumentIds(userId, documentIds);
+      const removeResult = await this.documentsService.removeByDocumentIds(
+        userId,
+        documentIds,
+      );
+
+      if (removeResult.deletedCount !== documentIds.length) {
+        throw new InternalServerErrorException(
+          '知识库下仍有文档未删除成功，请稍后重试',
+        );
+      }
     }
 
     const chatSessions = await this.chatSessionModel

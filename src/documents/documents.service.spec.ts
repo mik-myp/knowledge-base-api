@@ -19,6 +19,7 @@ describe('DocumentsService', () => {
     deleteMany: jest.Mock;
     find: jest.Mock;
     findOne: jest.Mock;
+    findOneAndUpdate: jest.Mock;
     findOneAndDelete: jest.Mock;
   };
   let documentChunkModel: {
@@ -41,6 +42,10 @@ describe('DocumentsService', () => {
     replaceDocumentVectors: jest.fn().mockResolvedValue(undefined),
     deleteDocumentVectors: jest.fn().mockResolvedValue(undefined),
   };
+  const flushBackgroundTasks = async () => {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  };
 
   beforeEach(async () => {
     knowledgeBaseModel = {
@@ -60,7 +65,14 @@ describe('DocumentsService', () => {
         exec: jest.fn().mockResolvedValue(undefined),
       }),
       find: jest.fn(),
-      findOne: jest.fn(),
+      findOne: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue({ _id: new Types.ObjectId() }),
+      }),
+      findOneAndUpdate: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue(undefined),
+      }),
       findOneAndDelete: jest.fn(),
     });
     documentChunkModel = {
@@ -369,7 +381,7 @@ describe('DocumentsService', () => {
     expect(documentModel).not.toHaveBeenCalled();
   });
 
-  it('rolls back the current uploaded file when indexing fails', async () => {
+  it('marks the current uploaded file as failed when indexing fails', async () => {
     const createdDocumentId = new Types.ObjectId().toHexString();
     const createdDocument = {
       id: createdDocumentId,
@@ -385,27 +397,29 @@ describe('DocumentsService', () => {
     );
     documentModel.mockImplementationOnce(() => createdDocument);
 
-    await expect(
-      service.upload(
-        userId,
-        [
-          {
-            originalname: 'guide.pdf',
-            mimetype: 'application/pdf',
-            size: 20,
-            buffer: Buffer.from('pdf'),
-          } as Express.Multer.File,
-        ],
+    const result = await service.upload(
+      userId,
+      [
         {
-          knowledgeBaseId,
-        },
-      ),
-    ).rejects.toThrow('index failed');
+          originalname: 'guide.pdf',
+          mimetype: 'application/pdf',
+          size: 20,
+          buffer: Buffer.from('pdf'),
+        } as Express.Multer.File,
+      ],
+      {
+        knowledgeBaseId,
+      },
+    );
 
-    expect(documentModel.deleteMany).toHaveBeenCalledWith({
-      _id: expect.any(Types.ObjectId),
-      userId: expect.any(Types.ObjectId),
-    });
+    await flushBackgroundTasks();
+
+    expect(result).toEqual([
+      {
+        originalName: 'guide.pdf',
+      },
+    ]);
+    expect(documentModel.findOneAndUpdate).toHaveBeenCalled();
     expect(documentChunkModel.deleteMany).toHaveBeenCalledWith({
       userId: expect.any(Types.ObjectId),
       documentId: expect.any(Types.ObjectId),
@@ -414,10 +428,12 @@ describe('DocumentsService', () => {
       userId,
       createdDocumentId,
     );
-    expect(storageService.deleteFile).toHaveBeenCalledWith('folder/guide.pdf');
+    expect(storageService.deleteFile).not.toHaveBeenCalledWith(
+      'folder/guide.pdf',
+    );
   });
 
-  it('rolls back previously uploaded files when a later file fails', async () => {
+  it('keeps previous files and only marks the failed file when a later file indexing fails', async () => {
     const firstDocumentId = new Types.ObjectId().toHexString();
     const secondDocumentId = new Types.ObjectId().toHexString();
     const firstDocument = {
@@ -445,48 +461,48 @@ describe('DocumentsService', () => {
       .mockImplementationOnce(() => firstDocument)
       .mockImplementationOnce(() => secondDocument);
 
-    await expect(
-      service.upload(
-        userId,
-        [
-          {
-            originalname: 'first.md',
-            mimetype: 'text/markdown',
-            size: 10,
-            buffer: Buffer.from('# first'),
-          } as Express.Multer.File,
-          {
-            originalname: 'second.md',
-            mimetype: 'text/markdown',
-            size: 11,
-            buffer: Buffer.from('# second'),
-          } as Express.Multer.File,
-        ],
+    const result = await service.upload(
+      userId,
+      [
         {
-          knowledgeBaseId,
-        },
-      ),
-    ).rejects.toThrow('second file failed');
+          originalname: 'first.md',
+          mimetype: 'text/markdown',
+          size: 10,
+          buffer: Buffer.from('# first'),
+        } as Express.Multer.File,
+        {
+          originalname: 'second.md',
+          mimetype: 'text/markdown',
+          size: 11,
+          buffer: Buffer.from('# second'),
+        } as Express.Multer.File,
+      ],
+      {
+        knowledgeBaseId,
+      },
+    );
 
-    expect(storageService.deleteFile).toHaveBeenNthCalledWith(
-      1,
-      'folder/second.md',
-    );
-    expect(storageService.deleteFile).toHaveBeenNthCalledWith(
-      2,
-      'folder/first.md',
-    );
+    await flushBackgroundTasks();
+
+    expect(result).toEqual([
+      {
+        originalName: 'first.md',
+      },
+      {
+        originalName: 'second.md',
+      },
+    ]);
+    expect(storageService.deleteFile).not.toHaveBeenCalled();
     expect(documentIndexingService.deleteDocumentVectors).toHaveBeenCalledWith(
       userId,
       secondDocumentId,
     );
-    expect(documentIndexingService.deleteDocumentVectors).toHaveBeenCalledWith(
-      userId,
-      firstDocumentId,
-    );
+    expect(
+      documentIndexingService.deleteDocumentVectors,
+    ).not.toHaveBeenCalledWith(userId, firstDocumentId);
   });
 
-  it('rolls back editor documents when indexing fails', async () => {
+  it('marks editor documents as failed when indexing fails', async () => {
     const createdDocumentId = new Types.ObjectId().toHexString();
     const createdDocument = {
       id: createdDocumentId,
@@ -503,15 +519,18 @@ describe('DocumentsService', () => {
     );
     documentModel.mockImplementationOnce(() => createdDocument);
 
-    await expect(
-      service.createEditorDocument(userId, {
-        knowledgeBaseId,
-        name: '说明文档',
-        content: '# hello',
-      }),
-    ).rejects.toThrow('editor index failed');
+    const result = await service.createEditorDocument(userId, {
+      knowledgeBaseId,
+      name: '说明文档',
+      content: '# hello',
+    });
 
-    expect(documentModel.deleteMany).toHaveBeenCalledWith({
+    await flushBackgroundTasks();
+
+    expect(result).toEqual({
+      originalName: '说明文档',
+    });
+    expect(documentModel.deleteMany).not.toHaveBeenCalledWith({
       _id: expect.any(Types.ObjectId),
       userId: expect.any(Types.ObjectId),
     });
@@ -717,12 +736,6 @@ describe('DocumentsService', () => {
         },
       ]),
     });
-    documentModel.deleteMany.mockReturnValue({
-      exec: jest.fn().mockResolvedValue({
-        deletedCount: 2,
-      }),
-    });
-
     const result = await service.removeByDocumentIds(userId, [
       firstId,
       secondId,
@@ -735,12 +748,7 @@ describe('DocumentsService', () => {
       },
       userId: expect.any(Types.ObjectId),
     });
-    expect(documentModel.deleteMany).toHaveBeenCalledWith({
-      _id: {
-        $in: [expect.any(Types.ObjectId), expect.any(Types.ObjectId)],
-      },
-      userId: expect.any(Types.ObjectId),
-    });
+    expect(documentModel.deleteMany).toHaveBeenCalledTimes(2);
     expect(storageService.deleteFile).toHaveBeenCalledWith('storage/first.pdf');
     expect(documentChunkModel.deleteMany).toHaveBeenCalledTimes(2);
     expect(documentIndexingService.deleteDocumentVectors).toHaveBeenCalledTimes(

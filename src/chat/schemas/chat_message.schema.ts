@@ -178,5 +178,8 @@ export class ChatMessage {
  * 定义对话消息Schema。
  */
 export const ChatMessageSchema = SchemaFactory.createForClass(ChatMessage);
-ChatMessageSchema.index({ userId: 1, sessionId: 1, sequence: 1 });
+ChatMessageSchema.index(
+  { userId: 1, sessionId: 1, sequence: 1 },
+  { unique: true },
+);
 ChatMessageSchema.index({ sessionId: 1, createdAt: 1 });

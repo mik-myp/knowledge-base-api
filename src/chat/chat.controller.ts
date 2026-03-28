@@ -148,7 +148,16 @@ export class ChatController {
           res.write(`data: ${JSON.stringify(chunk)}\n\n`);
         },
         error: (error: Error) => {
-          res.destroy(error);
+          res.write(
+            `data: ${JSON.stringify({
+              sessionId: '',
+              answer: '',
+              error: error.message || '本次问答处理失败，请稍后重试',
+              sources: [],
+              done: true,
+            })}\n\n`,
+          );
+          res.end();
         },
         complete: () => {
           res.end();

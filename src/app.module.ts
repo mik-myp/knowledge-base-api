@@ -41,8 +41,7 @@ import { ChatModule } from './chat/chat.module';
           uri:
             configService.get<string>('MONGODB_URI') ||
             'mongodb://localhost:27017/knowledge-base-api',
-          dbName:
-            configService.get<string>('MONGODB_DB_NAME') || 'knowledge',
+          dbName: configService.get<string>('MONGODB_DB_NAME') || 'knowledge',
           serverApi: {
             version: '1',
             strict: strictValue === 'true',

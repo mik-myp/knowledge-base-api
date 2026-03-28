@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { StreamableFile } from '@nestjs/common';
 import { DocumentsController } from './documents.controller';
 import { DocumentsService } from './documents.service';
 
@@ -125,42 +126,26 @@ describe('DocumentsController', () => {
     });
   });
 
-  it('writes downloaded document content to the response', async () => {
-    const response = {
-      setHeader: jest.fn(),
-      send: jest.fn(),
-    };
-
+  it('returns a streamable file for downloads', async () => {
     documentsService.download.mockResolvedValue({
       fileName: '设计说明.md',
       mimeType: 'text/markdown',
       content: Buffer.from('# hello'),
     });
 
-    await controller.download(
+    const result = await controller.download(
       {
         user: {
           userId: 'user-id',
         },
       } as never,
       'document-id',
-      response as never,
     );
 
     expect(documentsService.download).toHaveBeenCalledWith(
       'user-id',
       'document-id',
     );
-    expect(response.setHeader).toHaveBeenNthCalledWith(
-      1,
-      'Content-Type',
-      'text/markdown',
-    );
-    expect(response.setHeader).toHaveBeenNthCalledWith(
-      2,
-      'Content-Disposition',
-      expect.stringContaining("filename*=UTF-8''"),
-    );
-    expect(response.send).toHaveBeenCalledWith(Buffer.from('# hello'));
+    expect(result).toBeInstanceOf(StreamableFile);
   });
 });

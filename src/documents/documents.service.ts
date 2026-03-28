@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -10,6 +11,7 @@ import { UploadDocumentDto } from './dto/upload-document.dto';
 import {
   Document,
   DocumentDocument,
+  DocumentIndexStatus,
   DocumentSourceType,
 } from './schemas/document.schema';
 import { serializeMongoResult } from 'src/common/plugins/mongoose-serialize.plugin';
@@ -35,12 +37,7 @@ import type {
 /**
  * 记录系统允许上传的文档扩展名集合。
  */
-const SUPPORTED_UPLOAD_EXTENSIONS = new Set([
-  'pdf',
-  'docx',
-  'md',
-  'txt',
-]);
+const SUPPORTED_UPLOAD_EXTENSIONS = new Set(['pdf', 'docx', 'md', 'txt']);
 
 /**
  * 记录可以直接按文本内容解析的扩展名集合。
@@ -52,6 +49,11 @@ export const TEXT_UPLOAD_EXTENSIONS = new Set(['md', 'txt']);
  */
 @Injectable()
 export class DocumentsService {
+  /**
+   * 记录文档相关流程日志。
+   */
+  private readonly logger = new Logger(DocumentsService.name);
+
   constructor(
     @InjectModel(KnowledgeBase.name)
     private readonly knowledgeBaseModel: Model<KnowledgeBaseDocument>,
@@ -171,12 +173,21 @@ export class DocumentsService {
 
     if (query.keyword) {
       filters.originalName = {
-        $regex: query.keyword,
+        $regex: this.escapeRegex(query.keyword),
         $options: 'i',
       };
     }
 
     return filters;
+  }
+
+  /**
+   * 对正则关键字做转义，避免误匹配和性能风险。
+   * @param value 原始搜索关键词。
+   * @returns 返回可安全用于正则查询的字符串。
+   */
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   /**
@@ -247,9 +258,7 @@ export class DocumentsService {
    */
   private assertSupportedUploadExtension(extension: string): void {
     if (!SUPPORTED_UPLOAD_EXTENSIONS.has(extension)) {
-      throw new BadRequestException(
-        '当前仅支持上传 md、pdf、txt、docx 文件',
-      );
+      throw new BadRequestException('当前仅支持上传 md、pdf、txt、docx 文件');
     }
   }
 
@@ -480,6 +489,7 @@ export class DocumentsService {
     file?: Express.Multer.File;
   }) {
     const chunks = await this.documentIndexingService.prepareChunks(params);
+    await this.ensureDocumentStillExists(params.userId, params.documentId);
 
     await this.replaceDocumentChunks(
       params.userId,
@@ -487,6 +497,7 @@ export class DocumentsService {
       params.documentId,
       chunks,
     );
+    await this.ensureDocumentStillExists(params.userId, params.documentId);
 
     await this.documentIndexingService.replaceDocumentVectors({
       userId: params.userId,
@@ -495,6 +506,211 @@ export class DocumentsService {
       documentName: params.documentName,
       chunks,
     });
+  }
+
+  /**
+   * 确认索引中的文档仍然存在。
+   * @param userId 当前用户 ID。
+   * @param documentId 文档 ID。
+   * @returns 如果文档存在则继续，否则抛出异常。
+   */
+  private async ensureDocumentStillExists(
+    userId: string,
+    documentId: string,
+  ): Promise<void> {
+    const document = await this.documentModel
+      .findOne({
+        _id: toObjectId(documentId),
+        userId: toObjectId(userId),
+      })
+      .select({ _id: 1 })
+      .lean()
+      .exec();
+
+    if (!document) {
+      throw new NotFoundException('文档不存在，索引任务已终止');
+    }
+  }
+
+  /**
+   * 更新文档索引状态。
+   * @param userId 当前用户 ID。
+   * @param documentId 文档 ID。
+   * @param status 索引状态。
+   * @param indexingError 最近一次索引错误，可选。
+   * @returns 更新完成后不返回额外数据。
+   */
+  private async updateDocumentIndexStatus(params: {
+    userId: string;
+    documentId: string;
+    status: DocumentIndexStatus;
+    indexingError?: string;
+  }): Promise<void> {
+    await this.documentModel
+      .findOneAndUpdate(
+        {
+          _id: toObjectId(params.documentId),
+          userId: toObjectId(params.userId),
+        },
+        {
+          $set: {
+            indexStatus: params.status,
+            indexingError: params.indexingError?.trim() || undefined,
+          },
+        },
+        {
+          runValidators: false,
+        },
+      )
+      .exec();
+  }
+
+  /**
+   * 将索引错误转换为适合展示的文本。
+   * @param error 错误对象。
+   * @returns 返回索引失败文案。
+   */
+  private resolveIndexingErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message.trim()) {
+      return error.message.trim();
+    }
+
+    return '文档索引失败';
+  }
+
+  /**
+   * 启动后台索引任务。
+   * @param params 索引参数。
+   * @returns 返回 Promise，完成后不返回额外数据。
+   */
+  private async runDocumentIndexing(params: {
+    userId: string;
+    knowledgeBaseId: string;
+    documentId: string;
+    documentName: string;
+    extension: string;
+    content?: string;
+    file?: Express.Multer.File;
+  }): Promise<void> {
+    await this.updateDocumentIndexStatus({
+      userId: params.userId,
+      documentId: params.documentId,
+      status: DocumentIndexStatus.Indexing,
+    });
+
+    try {
+      await this.syncDocumentIndex(params);
+      await this.updateDocumentIndexStatus({
+        userId: params.userId,
+        documentId: params.documentId,
+        status: DocumentIndexStatus.Success,
+      });
+    } catch (error) {
+      const errorMessage = this.resolveIndexingErrorMessage(error);
+
+      try {
+        await this.removeDocumentIndex(params.userId, params.documentId);
+      } catch (cleanupError) {
+        this.logger.error(
+          `清理失败的文档索引时出错; documentId=${params.documentId}; message=${this.resolveIndexingErrorMessage(cleanupError)}`,
+          cleanupError instanceof Error ? cleanupError.stack : undefined,
+        );
+      }
+
+      await this.updateDocumentIndexStatus({
+        userId: params.userId,
+        documentId: params.documentId,
+        status: DocumentIndexStatus.Failed,
+        indexingError: errorMessage,
+      });
+
+      this.logger.error(
+        `文档索引失败; documentId=${params.documentId}; message=${errorMessage}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+  }
+
+  /**
+   * 以后台任务方式触发文档索引。
+   * @param params 索引参数。
+   * @returns 触发完成后不返回额外数据。
+   */
+  private queueDocumentIndexing(params: {
+    userId: string;
+    knowledgeBaseId: string;
+    documentId: string;
+    documentName: string;
+    extension: string;
+    content?: string;
+    file?: Express.Multer.File;
+  }): void {
+    void this.runDocumentIndexing(params).catch((error: unknown) => {
+      this.logger.error(
+        `后台文档索引任务异常退出; documentId=${params.documentId}; message=${this.resolveIndexingErrorMessage(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+    });
+  }
+
+  /**
+   * 删除文档记录。
+   * @param userId 当前用户 ID。
+   * @param documentId 文档 ID。
+   * @returns 删除完成后不返回额外数据。
+   */
+  private async deleteDocumentRecord(
+    userId: string,
+    documentId: string,
+  ): Promise<void> {
+    await this.documentModel
+      .deleteMany({
+        _id: toObjectId(documentId),
+        userId: toObjectId(userId),
+      })
+      .exec();
+  }
+
+  /**
+   * 清理文档关联的对象存储和索引数据。
+   * @param userId 当前用户 ID。
+   * @param params 清理参数。
+   * @param params.documentId 文档 ID。
+   * @param params.storageKey 对象存储 key，可选。
+   * @returns 清理完成后不返回额外数据。
+   */
+  private async cleanupDocumentArtifacts(
+    userId: string,
+    params: {
+      documentId: string;
+      storageKey?: string;
+    },
+  ): Promise<void> {
+    if (params.storageKey && this.storageService.isConfigured()) {
+      await this.storageService.deleteFile(params.storageKey);
+    }
+
+    await this.removeDocumentIndex(userId, params.documentId);
+  }
+
+  /**
+   * 按已查询到的文档记录执行安全删除。
+   * @param userId 当前用户 ID。
+   * @param document 需要删除的文档记录。
+   * @returns 删除完成后不返回额外数据。
+   */
+  private async removeDocumentByRecord(
+    userId: string,
+    document: {
+      id: string;
+      storageKey?: string;
+    },
+  ): Promise<void> {
+    await this.cleanupDocumentArtifacts(userId, {
+      documentId: document.id,
+      storageKey: document.storageKey,
+    });
+    await this.deleteDocumentRecord(userId, document.id);
   }
 
   /**
@@ -542,12 +758,13 @@ export class DocumentsService {
         mimeType: normalizedFile.mimetype,
         size: file.size,
         extension,
+        indexStatus: DocumentIndexStatus.Pending,
       });
 
       await newDocument.save();
       documentId = newDocument.id;
 
-      await this.syncDocumentIndex({
+      this.queueDocumentIndexing({
         userId,
         knowledgeBaseId: uploadDocument.knowledgeBaseId,
         documentId,
@@ -660,12 +877,13 @@ export class DocumentsService {
         extension: 'md',
         mimeType: 'text/markdown',
         size: Buffer.byteLength(editorDocument.content, 'utf8'),
+        indexStatus: DocumentIndexStatus.Pending,
       });
 
       await document.save();
       documentId = document.id;
 
-      await this.syncDocumentIndex({
+      this.queueDocumentIndexing({
         userId,
         knowledgeBaseId: editorDocument.knowledgeBaseId,
         documentId,
@@ -792,12 +1010,10 @@ export class DocumentsService {
    * @returns 返回被删除的文档记录。
    */
   async remove(userId: string, id: string) {
-    const userObjectId = toObjectId(userId);
-    const documentObjectId = toObjectId(id);
     const document = await this.documentModel
-      .findOneAndDelete({
-        _id: documentObjectId,
-        userId: userObjectId,
+      .findOne({
+        _id: toObjectId(id),
+        userId: toObjectId(userId),
       })
       .exec();
 
@@ -805,11 +1021,10 @@ export class DocumentsService {
       throw new NotFoundException('文档不存在');
     }
 
-    if (document.storageKey && this.storageService.isConfigured()) {
-      await this.storageService.deleteFile(document.storageKey);
-    }
-
-    await this.removeDocumentIndex(userId, id);
+    await this.removeDocumentByRecord(userId, {
+      id: document.id,
+      storageKey: document.storageKey,
+    });
 
     return serializeMongoResult(document.toObject());
   }
@@ -824,7 +1039,9 @@ export class DocumentsService {
     userId: string,
     documentIds: string[],
   ): Promise<RemoveByDocumentIdsResult> {
-    const normalizedDocumentIds = Array.from(new Set(documentIds.filter(Boolean)));
+    const normalizedDocumentIds = Array.from(
+      new Set(documentIds.filter(Boolean)),
+    );
 
     if (!normalizedDocumentIds.length) {
       return {
@@ -856,34 +1073,22 @@ export class DocumentsService {
       };
     }
 
-    const deletedIds = documents.map((document) => document.id);
+    const deletedIds: string[] = [];
 
-    await this.documentModel
-      .deleteMany({
-        _id: {
-          $in: deletedIds.map((id) => toObjectId(id)),
-        },
-        userId: userObjectId,
-      })
-      .exec();
-
-    const storageKeys = documents
-      .map((document) => document.storageKey)
-      .filter((storageKey): storageKey is string => Boolean(storageKey));
-
-    if (this.storageService.isConfigured() && storageKeys.length) {
-      await Promise.all(
-        storageKeys.map((storageKey) =>
-          this.storageService.deleteFile(storageKey),
-        ),
-      );
+    for (const document of documents) {
+      try {
+        await this.removeDocumentByRecord(userId, {
+          id: document.id,
+          storageKey: document.storageKey,
+        });
+        deletedIds.push(document.id);
+      } catch (error) {
+        this.logger.error(
+          `批量删除文档失败; documentId=${document.id}; message=${this.resolveIndexingErrorMessage(error)}`,
+          error instanceof Error ? error.stack : undefined,
+        );
+      }
     }
-
-    await Promise.all(
-      deletedIds.map((documentId) =>
-        this.removeDocumentIndex(userId, documentId),
-      ),
-    );
 
     return {
       deletedCount: deletedIds.length,

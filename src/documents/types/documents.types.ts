@@ -10,6 +10,8 @@ export type DocumentRecord = {
   extension: string;
   mimeType: string;
   size: number;
+  indexStatus: 'pending' | 'indexing' | 'success' | 'failed';
+  indexingError?: string;
   content?: string;
   createdAt: string;
   updatedAt: string;

@@ -15,6 +15,16 @@ export enum DocumentSourceType {
 }
 
 /**
+ * 定义文档索引状态的可选枚举值。
+ */
+export enum DocumentIndexStatus {
+  Pending = 'pending',
+  Indexing = 'indexing',
+  Success = 'success',
+  Failed = 'failed',
+}
+
+/**
  * 定义文档相关逻辑。
  */
 @Schema({
@@ -115,6 +125,28 @@ export class Document {
     min: 0,
   })
   size: number;
+
+  /**
+   * 保存索引构建状态。
+   */
+  @Prop({
+    type: String,
+    enum: Object.values(DocumentIndexStatus),
+    required: true,
+    default: DocumentIndexStatus.Pending,
+    index: true,
+  })
+  indexStatus: DocumentIndexStatus;
+
+  /**
+   * 保存最近一次索引失败原因。
+   */
+  @Prop({
+    type: String,
+    trim: true,
+    default: undefined,
+  })
+  indexingError?: string;
 }
 
 /**

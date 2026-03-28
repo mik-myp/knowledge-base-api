@@ -228,6 +228,87 @@ export class ChatService {
   }
 
   /**
+   * 原子地为会话预留一段消息序号。
+   * @param sessionId 会话 ID。
+   * @param count 需要预留的序号数量。
+   * @returns 返回本次预留区间的起始序号。
+   */
+  private async reserveSequences(
+    sessionId: string,
+    count: number,
+  ): Promise<number> {
+    if (count <= 0) {
+      return 0;
+    }
+
+    const sessionObjectId = toObjectId(sessionId);
+
+    for (;;) {
+      const session = await this.chatSessionModel
+        .findById(sessionObjectId)
+        .select({ messageSequence: 1 })
+        .lean()
+        .exec();
+
+      if (!session) {
+        throw new NotFoundException('会话不存在');
+      }
+
+      if (typeof session.messageSequence === 'number') {
+        const updatedSession = await this.chatSessionModel
+          .findByIdAndUpdate(
+            sessionObjectId,
+            {
+              $inc: {
+                messageSequence: count,
+              },
+            },
+            {
+              returnDocument: 'after',
+            },
+          )
+          .select({ messageSequence: 1 })
+          .lean()
+          .exec();
+
+        if (typeof updatedSession?.messageSequence === 'number') {
+          return updatedSession.messageSequence - count;
+        }
+
+        continue;
+      }
+
+      const nextSequence = (await this.getLastSequence(sessionId)) + 1;
+      const initialized = await this.chatSessionModel
+        .updateOne(
+          {
+            _id: sessionObjectId,
+            $or: [
+              {
+                messageSequence: {
+                  $exists: false,
+                },
+              },
+              {
+                messageSequence: null,
+              },
+            ],
+          },
+          {
+            $set: {
+              messageSequence: nextSequence + count,
+            },
+          },
+        )
+        .exec();
+
+      if (initialized.modifiedCount > 0) {
+        return nextSequence;
+      }
+    }
+  }
+
+  /**
    * 批量创建消息记录。
    * @param messages 消息列表。
    * @returns 返回 Promise，解析后得到Serialized对话Message[]。
@@ -279,7 +360,10 @@ export class ChatService {
     sessionId: string,
     dto: AskChatDto,
   ) {
-    const lastSequence = await this.getLastSequence(sessionId);
+    const startSequence = await this.reserveSequences(
+      sessionId,
+      dto.messages.length,
+    );
 
     return this.createMessages(
       dto.messages.map((message, index) => ({
@@ -287,7 +371,7 @@ export class ChatService {
         sessionId,
         messageType: message.role,
         content: message.content,
-        sequence: lastSequence + index + 1,
+        sequence: startSequence + index,
         name: message.name,
         toolCallId: message.toolCallId,
       })),
@@ -319,7 +403,7 @@ export class ChatService {
     }>;
     sources?: SerializedChatMessage['sources'];
   }) {
-    const lastSequence = await this.getLastSequence(params.sessionId);
+    const startSequence = await this.reserveSequences(params.sessionId, 1);
 
     const [assistantMessage] = await this.createMessages([
       {
@@ -327,7 +411,7 @@ export class ChatService {
         sessionId: params.sessionId,
         messageType: ChatMessageType.Ai,
         content: params.answer,
-        sequence: lastSequence + 1,
+        sequence: startSequence,
         responseMetadata: params.responseMetadata,
         usageMetadata: params.usageMetadata,
         toolCalls: params.toolCalls,
@@ -626,6 +710,7 @@ export class ChatService {
         ? toObjectId(createChatDto.knowledgeBaseId)
         : undefined,
       title: createChatDto.title || '新会话',
+      messageSequence: 0,
     });
 
     await session.save();
@@ -965,19 +1050,14 @@ export class ChatService {
           error instanceof Error ? error.stack : undefined,
         );
 
-        if (currentSessionId && !cancelled) {
-          subscriber.next({
-            sessionId: currentSessionId,
-            answer: '',
-            error: errorMessage,
-            sources: [],
-            done: true,
-          });
-          subscriber.complete();
-          return;
-        }
-
-        subscriber.error(error);
+        subscriber.next({
+          sessionId: currentSessionId ?? '',
+          answer: '',
+          error: errorMessage,
+          sources: [],
+          done: true,
+        });
+        subscriber.complete();
       });
 
       return () => {
