@@ -26,6 +26,6 @@ export class StartWriteDto {
 
   @IsNumber()
   @Min(0)
-  @Max(100)
+  @Max(1)
   creativity: number;
 }

@@ -1,14 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-  Request,
-  Res,
-} from '@nestjs/common';
+import { Controller, Post, Body, Request, Res } from '@nestjs/common';
 import { WriteService } from './write.service';
 import type { Response } from 'express';
 

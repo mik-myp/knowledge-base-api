@@ -33,7 +33,7 @@ export class LangchainService {
    * 创建问答使用的聊天模型实例。
    * @returns 返回配置好的 `ChatOpenAI` 实例。
    */
-  createChatModel() {
+  createChatModel(temperature?: number) {
     return new ChatOpenAI({
       model: this.configService.get<string>('OPENAI_CHAT_MODEL'),
       apiKey: this.configService.get<string>('OPENAI_CHAT_API_KEY'),
@@ -41,6 +41,7 @@ export class LangchainService {
       configuration: {
         baseURL: this.configService.get<string>('OPENAI_CHAT_BASE_URL'),
       },
+      temperature: temperature ?? 0.7,
     });
   }
 

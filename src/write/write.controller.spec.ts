@@ -8,7 +8,14 @@ describe('WriteController', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [WriteController],
-      providers: [WriteService],
+      providers: [
+        {
+          provide: WriteService,
+          useValue: {
+            start: jest.fn(),
+          },
+        },
+      ],
     }).compile();
 
     controller = module.get<WriteController>(WriteController);
