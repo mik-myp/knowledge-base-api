@@ -16,6 +16,7 @@ import { UsersModule } from './users/users.module';
 import { KnowledgeBasesModule } from './knowledge_bases/knowledge_bases.module';
 import { DocumentsModule } from './documents/documents.module';
 import { ChatModule } from './chat/chat.module';
+import { WriteModule } from './write/write.module';
 
 /**
  * 组织App相关依赖的模块。
@@ -80,6 +81,7 @@ import { ChatModule } from './chat/chat.module';
     KnowledgeBasesModule,
     DocumentsModule,
     ChatModule,
+    WriteModule,
   ],
   controllers: [AppController],
   providers: [
